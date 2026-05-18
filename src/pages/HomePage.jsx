@@ -73,6 +73,9 @@ export default function HomePage() {
         ...defaultConfig,
         country,
         campaign: fallbackCampaign,
+        descriptorMode:
+          preferences.descriptor_mode ||
+          "category",
       }
 
       setDefaultConfig(config)
@@ -88,6 +91,9 @@ export default function HomePage() {
         ...defaultConfig,
         country,
         campaign: fallbackCampaign,
+        descriptorMode:
+          preferences.descriptor_mode ||
+          "category",
       }
 
       setDefaultConfig(config)
@@ -108,6 +114,9 @@ export default function HomePage() {
         ...defaultConfig,
         country,
         campaign: campaign.code,
+        descriptorMode:
+          preferences.descriptor_mode ||
+          "category",
       }
 
       setDefaultConfig(config)
@@ -140,6 +149,9 @@ export default function HomePage() {
       ...defaultConfig,
       country,
       campaign: campaign.code,
+      descriptorMode:
+        preferences.descriptor_mode ||
+        "category",
     }
 
     setDefaultConfig(config)

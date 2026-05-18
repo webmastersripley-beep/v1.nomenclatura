@@ -3,6 +3,9 @@ import { saveAs } from "file-saver"
 
 import { useUserStore }
   from "@/store/useUserStore"
+import {
+  buildZipManifest,
+} from "@/utils/buildZipEntries"
 
 export async function downloadZip(
   results
@@ -18,77 +21,11 @@ export async function downloadZip(
 
   const zip = new JSZip()
 
-  results.forEach((item) => {
-
-    if (!item.file) {
-      return
-    }
-
-    const fileName =
-      sanitizeFileName(
-        item.finalName
-      )
-
-    if (
-      downloadMode === "directo"
-    ) {
-
-      zip.file(
-        fileName,
-        item.file
-      )
-
-      return
-    }
-
-    if (
-      downloadMode ===
-      "carpeta-unica"
-    ) {
-
-      zip
-        .folder("imagenes")
-        .file(
-          fileName,
-          item.file
-        )
-
-      return
-    }
-
-    if (
-      downloadMode ===
-      "por-formato"
-    ) {
-
-      const formatFolder =
-        sanitizeFolderName(
-          item.format ||
-          "otros"
-        )
-
-      zip
-        .folder(formatFolder)
-        .file(
-          fileName,
-          item.file
-        )
-
-      return
-    }
-
-    const familyFolder =
-      sanitizeFolderName(
-        item.piece ||
-        "manual"
-      )
-
-    zip
-      .folder(familyFolder)
-      .file(
-        fileName,
-        item.file
-      )
+  buildZipManifest(
+    results,
+    downloadMode
+  ).forEach(({ item, path }) => {
+    zip.file(path, item.file)
   })
 
   const content =
@@ -103,36 +40,6 @@ export async function downloadZip(
     content,
     `nomenclaturas-${date}.zip`
   )
-}
-
-function sanitizeFileName(
-  name
-) {
-
-  return String(name || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      ""
-    )
-    .replace(/\s+/g, "-")
-    .replace(/ñ/g, "n")
-}
-
-function sanitizeFolderName(
-  name
-) {
-
-  return String(name || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(
-      /[\u0300-\u036f]/g,
-      ""
-    )
-    .replace(/\s+/g, "-")
-    .replace(/ñ/g, "n")
 }
 
 function getTodayFormatted() {

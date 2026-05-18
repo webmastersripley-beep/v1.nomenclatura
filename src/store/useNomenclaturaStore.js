@@ -3,6 +3,7 @@ import {
   sanitizeValue,
   sanitizeTags
 } from "@/utils/sanitizeValue"
+import { buildFinalName } from "@/utils/buildFinalName"
 
 export const useNomenclaturaStore = create((set) => ({
   currentStep: "upload",
@@ -261,14 +262,16 @@ setDefaultConfig:
         }
 
         updatedItem.finalName =
-          [
-            updatedItem.piece || "manual",
-            updatedItem.format || "manual",
-            updatedItem.campaign || "hg",
-            updatedItem.category || "manual",
-            updatedItem.date || state.defaultConfig.date,
-            updatedItem.country || "cl",
-          ].join("-") + ".webp"
+          buildFinalName(
+            {
+              ...updatedItem,
+              date:
+                updatedItem.date ||
+                state.defaultConfig.date,
+            },
+            updatedItem.descriptorMode ||
+            "category"
+          )
 
         return updatedItem
       })
@@ -277,6 +280,23 @@ setDefaultConfig:
         results: updatedResults,
       }
     }),
+
+  recomputeFinalNames: (descriptorMode = "category") =>
+    set((state) => ({
+      results: state.results.map((item) => ({
+        ...item,
+        descriptorMode,
+        finalName: buildFinalName(
+          {
+            ...item,
+            date:
+              item.date ||
+              state.defaultConfig.date,
+          },
+          descriptorMode
+        ),
+      })),
+    })),
 
   resetProject: () =>
     set({

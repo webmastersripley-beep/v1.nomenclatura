@@ -1,18 +1,42 @@
-# React + Vite
+# Nomenclaturas retail
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Motor de nomenclaturas para imágenes retail:
 
-Currently, two official plugins are available:
+```text
+subir imágenes
+→ agrupar familias
+→ seleccionar campaña
+→ generar nombres
+→ validar
+→ comprimir opcionalmente
+→ descargar ZIP / metadata
+→ guardar trazabilidad
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Desarrollo
 
-## React Compiler
+```bash
+npm install
+npm run dev
+```
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+## Variables de entorno
 
-Note: This will impact Vite dev & build performances.
+Copia `.env.example` a `.env` y completa:
 
-## Expanding the ESLint configuration
+```env
+VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co
+VITE_SUPABASE_ANON_KEY=TU_CLAVE_ANON_PUBLICA
+GEMINI_API_KEY=TU_CLAVE_GEMINI
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+No uses una clave `service_role` en el frontend.
+
+## Base de datos
+
+Las migraciones están en [`supabase/migrations`](./supabase/migrations).
+La guía de despliegue está en [`supabase/README.md`](./supabase/README.md).
+
+## Seguimiento
+
+El estado actual de implementación está resumido en [`docs/seguimiento.md`](./docs/seguimiento.md).

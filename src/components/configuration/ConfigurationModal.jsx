@@ -1,11 +1,23 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   saveUserPreferences,
 } from "@/services/preferencesService"
 import {
+  uploadBackgroundImage,
+} from "@/services/backgroundService"
+import {
   useUserStore,
 } from "@/store/useUserStore"
+import {
+  useNomenclaturaStore,
+} from "@/store/useNomenclaturaStore"
+import {
+  validateConfiguration,
+} from "@/utils/validateConfiguration"
+import {
+  buildFinalName,
+} from "@/utils/buildFinalName"
 
 export default function ConfigurationModal({
   onClose,
@@ -16,143 +28,156 @@ export default function ConfigurationModal({
       (state) => state.preferences
     )
   const user =
-  useUserStore(
-    (state) => state.user
-  )
-
+    useUserStore(
+      (state) => state.user
+    )
   const setPreferences =
     useUserStore(
       (state) => state.setPreferences
     )
+  const recomputeFinalNames =
+    useNomenclaturaStore(
+      (state) => state.recomputeFinalNames
+    )
 
-  const [
-    themePreset,
-    setThemePreset,
-  ] = useState(
-    preferences.theme_preset
-    || "midnight"
+  const [themePreset, setThemePreset] =
+    useState(preferences.theme_preset || "midnight")
+  const [backgroundType, setBackgroundType] =
+    useState(preferences.background_type || "gradient")
+  const [enableBlobs, setEnableBlobs] =
+    useState(preferences.enable_blobs ?? true)
+  const [descriptorMode, setDescriptorMode] =
+    useState(preferences.descriptor_mode || "category")
+  const [backgroundImageUrl, setBackgroundImageUrl] =
+    useState(preferences.background_image_url || "")
+  const [backgroundOpacity, setBackgroundOpacity] =
+    useState(preferences.background_opacity ?? 0.15)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+
+  const previewName = useMemo(
+    () =>
+      buildFinalName(
+        {
+          piece: "grupo-1",
+          format: "desk",
+          campaign: "cyb",
+          category: "calefaccion",
+          brand: "bosch",
+          date: "170526",
+          country: "cl",
+        },
+        descriptorMode
+      ),
+    [descriptorMode]
   )
 
-  const [
-    backgroundType,
-    setBackgroundType,
-  ] = useState(
-    preferences.background_type
-    || "gradient"
-  )
+  const handleUploadBackground = async (event) => {
+    const file = event.target.files?.[0]
 
-  const [
-    enableBlobs,
-    setEnableBlobs,
-  ] = useState(
-    preferences.enable_blobs
-    ?? true
-  )
+    if (!file) return
 
-  const [
-    descriptorMode,
-    setDescriptorMode,
-  ] = useState(
-    preferences.descriptor_mode
-    || "category"
-  )
+    try {
+      setIsUploading(true)
+      const publicUrl = await uploadBackgroundImage(
+        file,
+        user?.id || "anonimo"
+      )
 
-  const [
-    backgroundImageUrl,
-    setBackgroundImageUrl,
-  ] = useState(
-    preferences.background_image_url
-    || ""
-  )
+      setBackgroundImageUrl(publicUrl)
 
-  const [
-    backgroundOpacity,
-    setBackgroundOpacity,
-  ] = useState(
-    preferences.background_opacity
-    || 0.15
-  )
+      if (backgroundType === "gradient") {
+        setBackgroundType("mixed")
+      }
 
-  const handleSave =
-    async () => {
+      toast.success("Fondo subido")
+    } catch (error) {
+      console.error(error)
+      toast.error(error.message || "Error subiendo fondo")
+    } finally {
+      setIsUploading(false)
+      event.target.value = ""
+    }
+  }
 
-        try {
+  const handleSave = async () => {
+    const payload = {
+      app_user_id:
+        user?.id,
 
-        const payload = {
+      default_country:
+        preferences.default_country,
 
-            app_user_id:
-            user?.id,
+      default_campaign:
+        preferences.default_campaign,
 
-            default_country:
-            preferences.default_country,
+      download_mode:
+        preferences.download_mode,
 
-            default_campaign:
-            preferences.default_campaign,
+      use_active_campaigns:
+        preferences.use_active_campaigns,
 
-            download_mode:
-            preferences.download_mode,
+      theme_preset:
+        themePreset,
 
-            use_active_campaigns:
-            preferences.use_active_campaigns,
+      background_type:
+        backgroundType,
 
-            theme_preset:
-            themePreset,
+      enable_blobs:
+        enableBlobs,
 
-            background_type:
-            backgroundType,
+      descriptor_mode:
+        descriptorMode,
 
-            enable_blobs:
-            enableBlobs,
+      background_image_url:
+        backgroundImageUrl.trim(),
 
-            descriptor_mode:
-            descriptorMode,
+      background_opacity:
+        Number(backgroundOpacity),
+    }
 
-            background_image_url:
-            backgroundImageUrl,
+    const errors =
+      validateConfiguration(payload)
 
-            background_opacity:
-            backgroundOpacity,
-        }
+    if (errors.length > 0) {
+      toast.error(errors[0])
+      return
+    }
 
-        await saveUserPreferences(
-            payload
-        )
+    try {
+      setIsSaving(true)
+      await saveUserPreferences(payload)
 
-        setPreferences({
+      setPreferences({
+        theme_preset:
+          themePreset,
 
-            theme_preset:
-            themePreset,
+        background_type:
+          backgroundType,
 
-            background_type:
-            backgroundType,
+        enable_blobs:
+          enableBlobs,
 
-            enable_blobs:
-            enableBlobs,
+        descriptor_mode:
+          descriptorMode,
 
-            descriptor_mode:
-            descriptorMode,
+        background_image_url:
+          backgroundImageUrl.trim(),
 
-            background_image_url:
-            backgroundImageUrl,
+        background_opacity:
+          Number(backgroundOpacity),
+      })
 
-            background_opacity:
-            backgroundOpacity,
-        })
+      recomputeFinalNames(descriptorMode)
 
-        toast.success(
-            "Configuración guardada"
-        )
-
-        onClose()
-
-        } catch (error) {
-
-        console.error(error)
-
-        toast.error(
-            "Error guardando configuración"
-        )
-        }
+      toast.success("Configuración guardada")
+      onClose()
+    } catch (error) {
+      console.error(error)
+      toast.error(error.message || "Error guardando configuración")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -161,11 +186,12 @@ export default function ConfigurationModal({
       bg-black/80
       flex items-center justify-center
       z-[120]
-      p-4
+      p-3 sm:p-4
     ">
 
       <div className="
-        w-full max-w-5xl h-[88vh]
+        w-full max-w-6xl
+        max-h-[92vh]
         flex flex-col
         bg-zinc-900
         border border-zinc-800
@@ -175,27 +201,17 @@ export default function ConfigurationModal({
 
         <div className="
           flex items-center justify-between
-          px-6 py-5
+          px-5 sm:px-6 py-4
           border-b border-zinc-800
         ">
 
           <div>
-
-            <h2 className="
-              text-2xl font-bold
-            ">
+            <h2 className="text-2xl font-bold">
               Configuración
             </h2>
-
-            <p className="
-              text-zinc-400
-              text-sm
-              mt-1
-            ">
-              Apariencia y reglas
-              globales del sistema.
+            <p className="text-zinc-400 text-sm mt-1">
+              Apariencia a la izquierda, nomenclatura a la derecha.
             </p>
-
           </div>
 
           <button
@@ -210,163 +226,112 @@ export default function ConfigurationModal({
           >
             ✕
           </button>
-
         </div>
 
         <div className="
-            flex-1
-            overflow-y-auto
-            p-5
-            grid grid-cols-1
-            lg:grid-cols-[340px_1fr]
-            gap-5
+          flex-1 overflow-y-auto
+          p-4 sm:p-5
+          grid grid-cols-1
+          xl:grid-cols-[320px_minmax(0,1fr)]
+          gap-4
         ">
 
           <aside className="
             bg-zinc-950
             border border-zinc-800
             rounded-3xl
-            p-5
+            p-4
           ">
+            <SectionTitle
+              title="Apariencia"
+              subtitle="Tema, fondo y atmósfera visual."
+            />
 
-            <h3 className="
-              font-bold text-lg
-              mb-5
-            ">
-              Apariencia
-            </h3>
-
-            <div className="
-              space-y-5
-            ">
-
-              <FieldLabel
-                label="Tema visual"
-              >
-
-                <div className="
-                  grid grid-cols-2
-                  gap-3
-                ">
-
-                  {themes.map(
-                    (theme) => (
-
-                      <ThemeCard
-                        key={theme.id}
-                        theme={theme}
-                        isActive={
-                          themePreset ===
-                          theme.id
-                        }
-                        onClick={() =>
-                          setThemePreset(
-                            theme.id
-                          )
-                        }
-                      />
-                    )
-                  )}
-
+            <div className="space-y-4">
+              <FieldLabel label="Tema visual">
+                <div className="grid grid-cols-2 gap-2">
+                  {themes.map((theme) => (
+                    <ThemeCard
+                      key={theme.id}
+                      theme={theme}
+                      isActive={themePreset === theme.id}
+                      onClick={() => setThemePreset(theme.id)}
+                    />
+                  ))}
                 </div>
-
               </FieldLabel>
 
-              <FieldLabel
-                label="
-                  Tipo de fondo
-                "
-              >
-
+              <FieldLabel label="Tipo de fondo">
                 <select
                   value={backgroundType}
                   onChange={(event) =>
-                    setBackgroundType(
-                      event.target.value
-                    )
+                    setBackgroundType(event.target.value)
                   }
                   className={inputClass}
                 >
-
                   <option value="gradient">
                     Solo gradiente
                   </option>
-
                   <option value="image">
                     Solo imagen
                   </option>
-
                   <option value="mixed">
                     Gradiente + imagen
                   </option>
-
                 </select>
-
               </FieldLabel>
 
-              <FieldLabel
-                label="
-                  Imagen fondo URL
-                "
-              >
+              <FieldLabel label="Imagen de fondo">
+                <div className="space-y-2">
+                  <input
+                    value={backgroundImageUrl}
+                    onChange={(event) =>
+                      setBackgroundImageUrl(event.target.value)
+                    }
+                    placeholder="https://..."
+                    className={inputClass}
+                  />
 
-                <input
-                  value={
-                    backgroundImageUrl
-                  }
-                  onChange={(event) =>
-                    setBackgroundImageUrl(
-                      event.target.value
-                    )
-                  }
-                  placeholder="
-                    https://...
-                  "
-                  className={inputClass}
-                />
-
+                  <label className="
+                    flex items-center justify-center
+                    rounded-xl border border-dashed border-zinc-700
+                    bg-zinc-900 px-4 py-3 text-sm
+                    text-zinc-300 hover:border-zinc-500
+                    cursor-pointer transition
+                  ">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadBackground}
+                      className="hidden"
+                    />
+                    {isUploading
+                      ? "Subiendo fondo..."
+                      : "Subir imagen real"}
+                  </label>
+                </div>
               </FieldLabel>
 
-              <FieldLabel
-                label="
-                  Opacidad imagen
-                "
-              >
-
+              <FieldLabel label={`Opacidad imagen · ${backgroundOpacity}`}>
                 <input
                   type="range"
                   min="0"
                   max="1"
                   step="0.05"
-                  value={
-                    backgroundOpacity
-                  }
+                  value={backgroundOpacity}
                   onChange={(event) =>
-                    setBackgroundOpacity(
-                      Number(
-                        event.target.value
-                      )
-                    )
+                    setBackgroundOpacity(Number(event.target.value))
                   }
                   className="w-full"
                 />
-
               </FieldLabel>
 
               <CheckOption
                 checked={enableBlobs}
-                onChange={() =>
-                  setEnableBlobs(
-                    !enableBlobs
-                  )
-                }
-                label="
-                  Activar blobs animados
-                "
+                onChange={() => setEnableBlobs(!enableBlobs)}
+                label="Activar blobs animados"
               />
-
             </div>
-
           </aside>
 
           <main className="
@@ -374,167 +339,97 @@ export default function ConfigurationModal({
             border border-zinc-800
             rounded-3xl
             overflow-hidden
-            relative
-            min-h-[420px]
+            grid grid-cols-1
+            lg:grid-cols-[minmax(0,1fr)_320px]
           ">
+            <section className="relative min-h-[360px]">
+              <ThemePreview
+                theme={themePreset}
+                enableBlobs={enableBlobs}
+                backgroundType={backgroundType}
+                backgroundImageUrl={backgroundImageUrl}
+                backgroundOpacity={backgroundOpacity}
+              />
 
-            <ThemePreview
-              theme={themePreset}
-              enableBlobs={
-                enableBlobs
-              }
-              backgroundType={
-                backgroundType
-              }
-              backgroundImageUrl={
-                backgroundImageUrl
-              }
-              backgroundOpacity={
-                backgroundOpacity
-              }
-            />
-
-            <div className="
-              relative z-20
-              p-8
-            ">
-
-              <div className="
-                max-w-lg
-              ">
-
+              <div className="relative z-20 p-5 sm:p-7">
                 <span className="
-                  inline-flex
-                  px-3 py-1
-                  rounded-full
-                  bg-white/10
-                  text-white/80
-                  text-xs
+                  inline-flex px-3 py-1 rounded-full
+                  bg-white/10 text-white/80 text-xs
                   backdrop-blur-sm
                 ">
                   Vista previa
                 </span>
 
-                <h2 className="
-                  mt-5
-                  text-5xl
-                  font-bold
-                  leading-tight
-                ">
+                <h2 className="mt-4 text-4xl sm:text-5xl font-bold leading-tight">
                   Nomenclaturas
                 </h2>
 
-                <p className="
-                  mt-4
-                  text-zinc-300
-                  text-lg
-                ">
-                  Sistema inteligente
-                  de nomenclaturas
-                  retail.
-                </p>
-
-              </div>
-
-              <div className="
-                mt-10
-                bg-black/30
-                border border-white/10
-                backdrop-blur-xl
-                rounded-3xl
-                p-6
-                max-w-md
-              ">
-
-                <h3 className="
-                  font-bold text-lg
-                ">
-                  Descriptor nomenclatura
-                </h3>
-
-                <p className="
-                  text-zinc-400
-                  text-sm mt-1
-                ">
-                  Configura cómo se
-                  construirá la categoría.
+                <p className="mt-3 text-zinc-300 max-w-md">
+                  El fondo se ve aquí exactamente como respirará en la app.
                 </p>
 
                 <div className="
-                  mt-5
-                  space-y-3
+                  mt-6 bg-black/35 border border-white/10
+                  backdrop-blur-xl rounded-2xl p-4
+                  max-w-xl
                 ">
-
-                  {descriptorModes.map(
-                    (mode) => (
-
-                      <button
-                        key={mode.id}
-                        onClick={() =>
-                          setDescriptorMode(
-                            mode.id
-                          )
-                        }
-                        className={`
-                          w-full
-                          text-left
-                          rounded-2xl
-                          border
-                          p-4
-                          transition
-                          ${
-                            descriptorMode ===
-                            mode.id
-                              ? "border-fuchsia-500 bg-fuchsia-500/10"
-                              : "border-white/10 bg-black/20 hover:border-white/20"
-                          }
-                        `}
-                      >
-
-                        <p className="
-                          font-medium
-                        ">
-                          {mode.name}
-                        </p>
-
-                        <p className="
-                          text-sm
-                          text-zinc-400
-                          mt-1
-                        ">
-                          {mode.example}
-                        </p>
-
-                      </button>
-                    )
-                  )}
-
+                  <p className="text-xs text-zinc-400 mb-2">
+                    Nombre final de ejemplo
+                  </p>
+                  <p className="text-sm sm:text-base break-all">
+                    {previewName}
+                  </p>
                 </div>
-
               </div>
+            </section>
 
-            </div>
+            <section className="
+              border-t lg:border-t-0 lg:border-l
+              border-zinc-800
+              p-4 sm:p-5
+            ">
+              <SectionTitle
+                title="Nomenclatura"
+                subtitle="Qué descriptor entra al nombre final."
+              />
 
+              <div className="space-y-3">
+                {descriptorModes.map((mode) => (
+                  <button
+                    key={mode.id}
+                    onClick={() => setDescriptorMode(mode.id)}
+                    className={`
+                      w-full text-left rounded-2xl border p-4 transition
+                      ${
+                        descriptorMode === mode.id
+                          ? "border-fuchsia-500 bg-fuchsia-500/10"
+                          : "border-white/10 bg-black/20 hover:border-white/20"
+                      }
+                    `}
+                  >
+                    <p className="font-medium">
+                      {mode.name}
+                    </p>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      {mode.example}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </section>
           </main>
-
         </div>
 
         <div className="
-            shrink-0
-            flex justify-end gap-3
-            px-6 py-5
-            border-t border-zinc-800
-            bg-zinc-950/60
+          shrink-0 flex justify-end gap-3
+          px-5 sm:px-6 py-4
+          border-t border-zinc-800 bg-zinc-950/60
         ">
-
           <button
             onClick={onClose}
             className="
-              px-4 py-3
-              rounded-xl
-              bg-zinc-800
-              hover:bg-zinc-700
-              transition
+              px-4 py-3 rounded-xl
+              bg-zinc-800 hover:bg-zinc-700 transition
             "
           >
             Cancelar
@@ -542,23 +437,20 @@ export default function ConfigurationModal({
 
           <button
             onClick={handleSave}
-            className="
-              px-5 py-3
-              rounded-xl
-              bg-white
-              text-black
-              font-medium
-              hover:opacity-90
-              transition
-            "
+            disabled={isSaving}
+            className={`
+              px-5 py-3 rounded-xl font-medium transition
+              ${
+                isSaving
+                  ? "bg-zinc-700 text-zinc-400"
+                  : "bg-white text-black hover:opacity-90"
+              }
+            `}
           >
-            Guardar configuración
+            {isSaving ? "Guardando..." : "Guardar configuración"}
           </button>
-
         </div>
-
       </div>
-
     </div>
   )
 }
@@ -570,67 +462,38 @@ function ThemePreview({
   backgroundImageUrl,
   backgroundOpacity,
 }) {
-
   const themeClass =
-    themeMap[theme]
-    || themeMap.midnight
+    themeMap[theme] || themeMap.midnight
 
   return (
     <>
+      <div className={`absolute inset-0 ${themeClass}`} />
 
-      <div className={`
-        absolute inset-0
-        ${themeClass}
-      `} />
-
-      {(backgroundType ===
-        "image" ||
-        backgroundType ===
-        "mixed") &&
+      {(backgroundType === "image" || backgroundType === "mixed") &&
         backgroundImageUrl && (
-
-        <div
-          className="
-            absolute inset-0
-            bg-cover bg-center
-          "
-          style={{
-            backgroundImage:
-              `url(${backgroundImageUrl})`,
-            opacity:
-              backgroundOpacity,
-          }}
-        />
-      )}
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{
+              backgroundImage: `url(${backgroundImageUrl})`,
+              opacity: backgroundOpacity,
+            }}
+          />
+        )}
 
       {enableBlobs && (
         <>
-
           <div className="
-            absolute
-            top-[-100px]
-            left-[-100px]
-            w-[300px]
-            h-[300px]
-            bg-fuchsia-500/30
-            blur-3xl
-            rounded-full
+            absolute top-[-100px] left-[-100px]
+            w-[300px] h-[300px]
+            bg-fuchsia-500/30 blur-3xl rounded-full
           " />
-
           <div className="
-            absolute
-            bottom-[-120px]
-            right-[-120px]
-            w-[340px]
-            h-[340px]
-            bg-cyan-500/20
-            blur-3xl
-            rounded-full
+            absolute bottom-[-120px] right-[-120px]
+            w-[340px] h-[340px]
+            bg-cyan-500/20 blur-3xl rounded-full
           " />
-
         </>
       )}
-
     </>
   )
 }
@@ -640,53 +503,35 @@ function ThemeCard({
   isActive,
   onClick,
 }) {
-
   return (
     <button
       onClick={onClick}
       className={`
-        relative
-        rounded-2xl
-        overflow-hidden
-        border
-        h-28
-        transition
-        ${
-          isActive
-            ? "border-fuchsia-500"
-            : "border-zinc-800"
-        }
+        relative rounded-2xl overflow-hidden border h-20 transition
+        ${isActive ? "border-fuchsia-500" : "border-zinc-800"}
       `}
     >
-
-      <div className={`
-        absolute inset-0
-        ${theme.className}
-      `} />
-
-      <div className="
-        absolute inset-0
-        bg-black/10
-      " />
-
-      <div className="
-        relative z-10
-        p-3
-        flex items-end
-        h-full
-      ">
-
-        <span className="
-          text-sm
-          font-medium
-          text-white
-        ">
+      <div className={`absolute inset-0 ${theme.className}`} />
+      <div className="absolute inset-0 bg-black/10" />
+      <div className="relative z-10 p-3 flex items-end h-full">
+        <span className="text-sm font-medium text-white">
           {theme.name}
         </span>
-
       </div>
-
     </button>
+  )
+}
+
+function SectionTitle({ title, subtitle }) {
+  return (
+    <div className="mb-4">
+      <h3 className="font-bold text-lg">
+        {title}
+      </h3>
+      <p className="text-sm text-zinc-500 mt-1">
+        {subtitle}
+      </p>
+    </div>
   )
 }
 
@@ -694,25 +539,14 @@ function FieldLabel({
   label,
   children,
 }) {
-
   return (
-    <label className="
-      block
-    ">
-
-      <span className="
-        text-sm
-        text-zinc-400
-      ">
+    <label className="block">
+      <span className="text-sm text-zinc-400">
         {label}
       </span>
-
-      <div className="
-        mt-2
-      ">
+      <div className="mt-2">
         {children}
       </div>
-
     </label>
   )
 }
@@ -722,65 +556,48 @@ function CheckOption({
   checked,
   onChange,
 }) {
-
   return (
     <label className="
-      flex items-center
-      gap-3
-      rounded-xl
-      border border-zinc-800
-      bg-zinc-900
-      px-4 py-3
-      text-sm text-zinc-300
+      flex items-center gap-3 rounded-xl
+      border border-zinc-800 bg-zinc-900
+      px-4 py-3 text-sm text-zinc-300
     ">
-
       <input
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="
-          accent-fuchsia-500
-        "
+        className="accent-fuchsia-500"
       />
-
-      <span>
-        {label}
-      </span>
-
+      <span>{label}</span>
     </label>
   )
 }
 
 const themes = [
-
   {
     id: "midnight",
     name: "Midnight",
     className:
       "bg-gradient-to-br from-zinc-950 via-black to-zinc-900",
   },
-
   {
     id: "cyber",
     name: "Cyber",
     className:
       "bg-gradient-to-br from-fuchsia-950 via-zinc-950 to-cyan-950",
   },
-
   {
     id: "ocean",
     name: "Ocean",
     className:
       "bg-gradient-to-br from-cyan-950 via-blue-950 to-zinc-950",
   },
-
   {
     id: "sunset",
     name: "Sunset",
     className:
       "bg-gradient-to-br from-orange-950 via-fuchsia-950 to-black",
   },
-
   {
     id: "luxury",
     name: "Luxury",
@@ -790,52 +607,37 @@ const themes = [
 ]
 
 const descriptorModes = [
-
   {
     id: "category",
     name: "Solo categoría",
-    example:
-      "zapatillas",
+    example: "calefaccion",
   },
-
   {
     id: "brand-category",
-    name:
-      "Marca + categoría",
-    example:
-      "adidas-zapatillas",
+    name: "Marca + categoría",
+    example: "bosch-calefaccion",
   },
-
   {
     id: "category-brand",
-    name:
-      "Categoría + marca",
-    example:
-      "zapatillas-adidas",
+    name: "Categoría + marca",
+    example: "calefaccion-bosch",
   },
-
   {
     id: "brand",
     name: "Solo marca",
-    example:
-      "adidas",
+    example: "bosch",
   },
 ]
 
 const themeMap = {
-
   midnight:
     "bg-gradient-to-br from-zinc-950 via-black to-zinc-900",
-
   cyber:
     "bg-gradient-to-br from-fuchsia-950 via-zinc-950 to-cyan-950",
-
   ocean:
     "bg-gradient-to-br from-cyan-950 via-blue-950 to-zinc-950",
-
   sunset:
     "bg-gradient-to-br from-orange-950 via-fuchsia-950 to-black",
-
   luxury:
     "bg-gradient-to-br from-yellow-950 via-black to-zinc-950",
 }

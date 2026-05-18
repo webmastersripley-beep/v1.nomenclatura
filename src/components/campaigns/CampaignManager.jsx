@@ -7,36 +7,34 @@ import {
   getAllCampaigns,
   createCampaign,
   disableCampaign,
+  updateCampaign,
+  reactivateCampaign,
 } from "@/services/campaignService"
 
 import { useUserStore } from "@/store/useUserStore"
 
+const emptyForm = (country) => ({
+  name: "",
+  code: "",
+  country,
+  start_at: null,
+  end_at: null,
+})
+
 export default function CampaignManager({ onClose }) {
   const user = useUserStore((state) => state.user)
   const preferences = useUserStore((state) => state.preferences)
+  const defaultCountry = preferences.default_country || "cl"
 
   const [campaigns, setCampaigns] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [isCreating, setIsCreating] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState(() => emptyForm(defaultCountry))
 
-  const [form, setForm] = useState({
-    name: "",
-    code: "",
-    country: preferences.default_country || "cl",
-    start_at: null,
-    end_at: null,
-  })
-
-  useEffect(() => {
-    loadCampaigns()
-  }, [form.country])
-
-  const loadCampaigns = async () => {
+  async function loadCampaigns() {
     try {
-      setIsLoading(true)
-
       const data = await getAllCampaigns(form.country)
-
       setCampaigns(data)
     } catch (error) {
       console.error(error)
@@ -46,55 +44,73 @@ export default function CampaignManager({ onClose }) {
     }
   }
 
-  const handleCreate = async () => {
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadCampaigns()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.country])
+
+  const resetForm = () => {
+    setEditingId(null)
+    setForm(emptyForm(defaultCountry))
+  }
+
+  const handleSubmit = async () => {
     try {
-      if (!form.name || !form.code || !form.start_at || !form.end_at) {
-        toast.error("Completa todos los campos")
-        return
+      setIsSaving(true)
+
+      if (editingId) {
+        await updateCampaign(editingId, form)
+        toast.success("Campaña actualizada")
+      } else {
+        await createCampaign({
+          ...form,
+          created_by_name: user?.name || "anonimo",
+          created_by_id: user?.id || null,
+        })
+        toast.success("Campaña creada")
       }
 
-      if (form.end_at <= form.start_at) {
-        toast.error("La fecha de término debe ser posterior al inicio")
-        return
-      }
-
-      setIsCreating(true)
-
-      await createCampaign({
-        ...form,
-        created_by_name: user?.name || "anonimo",
-        created_by_id: user?.id || null,
-      })
-
-      toast.success("Campaña creada")
-
-      setForm({
-        name: "",
-        code: "",
-        country: preferences.default_country || "cl",
-        start_at: null,
-        end_at: null,
-      })
-
+      resetForm()
       await loadCampaigns()
     } catch (error) {
       console.error(error)
-      toast.error(error.message || "Error creando campaña")
+      toast.error(error.message || "Error guardando campaña")
     } finally {
-      setIsCreating(false)
+      setIsSaving(false)
     }
+  }
+
+  const handleEdit = (campaign) => {
+    setEditingId(campaign.id)
+    setForm({
+      name: campaign.name || "",
+      code: campaign.code || "",
+      country: campaign.country || defaultCountry,
+      start_at: campaign.start_at ? new Date(campaign.start_at) : null,
+      end_at: campaign.end_at ? new Date(campaign.end_at) : null,
+    })
   }
 
   const handleDisable = async (id) => {
     try {
       await disableCampaign(id)
-
       toast.success("Campaña desactivada")
-
       await loadCampaigns()
     } catch (error) {
       console.error(error)
-      toast.error("Error desactivando campaña")
+      toast.error(error.message || "Error desactivando campaña")
+    }
+  }
+
+  const handleReactivate = async (id) => {
+    try {
+      await reactivateCampaign(id)
+      toast.success("Campaña reactivada")
+      await loadCampaigns()
+    } catch (error) {
+      console.error(error)
+      toast.error(error.message || "Error reactivando campaña")
     }
   }
 
@@ -108,7 +124,7 @@ export default function CampaignManager({ onClose }) {
             </h2>
 
             <p className="text-zinc-400 text-sm mt-1">
-              Programa campañas activas por fecha y hora.
+              Crea, edita y reactiva campañas con control real de solapamientos.
             </p>
           </div>
 
@@ -122,9 +138,20 @@ export default function CampaignManager({ onClose }) {
 
         <div className="grid grid-cols-1 xl:grid-cols-[380px_1fr]">
           <aside className="border-r border-zinc-800 p-6">
-            <h3 className="font-bold mb-5">
-              Nueva campaña
-            </h3>
+            <div className="flex items-center justify-between gap-3 mb-5">
+              <h3 className="font-bold">
+                {editingId ? "Editar campaña" : "Nueva campaña"}
+              </h3>
+
+              {editingId && (
+                <button
+                  onClick={resetForm}
+                  className="text-sm text-zinc-400 hover:text-white transition"
+                >
+                  Cancelar edición
+                </button>
+              )}
+            </div>
 
             <div className="space-y-4">
               <input
@@ -144,22 +171,26 @@ export default function CampaignManager({ onClose }) {
                 onChange={(event) =>
                   setForm({
                     ...form,
-                    code: event.target.value,
+                    code: event.target.value
+                      .toLowerCase()
+                      .replace(/\s+/g, "-"),
                   })
                 }
-                placeholder="Abreviatura campaña"
+                placeholder="Código campaña"
                 className={inputClass}
               />
 
               <select
                 value={form.country}
-                onChange={(event) =>
+                onChange={(event) => {
+                  setIsLoading(true)
                   setForm({
                     ...form,
                     country: event.target.value,
                   })
-                }
+                }}
                 className={inputClass}
+                disabled={Boolean(editingId)}
               >
                 <option value="cl">Chile</option>
                 <option value="pe">Perú</option>
@@ -190,18 +221,22 @@ export default function CampaignManager({ onClose }) {
               />
 
               <button
-                onClick={handleCreate}
-                disabled={isCreating}
+                onClick={handleSubmit}
+                disabled={isSaving}
                 className={`
                   w-full px-4 py-3 rounded-xl font-medium transition
                   ${
-                    isCreating
+                    isSaving
                       ? "bg-zinc-700 text-zinc-400"
                       : "bg-white text-black hover:opacity-90"
                   }
                 `}
               >
-                {isCreating ? "Creando..." : "Crear campaña"}
+                {isSaving
+                  ? "Guardando..."
+                  : editingId
+                    ? "Guardar cambios"
+                    : "Crear campaña"}
               </button>
             </div>
           </aside>
@@ -235,6 +270,8 @@ export default function CampaignManager({ onClose }) {
                   key={campaign.id}
                   campaign={campaign}
                   onDisable={handleDisable}
+                  onEdit={handleEdit}
+                  onReactivate={handleReactivate}
                 />
               ))}
             </div>
@@ -276,7 +313,12 @@ function DateField({
   )
 }
 
-function CampaignCard({ campaign, onDisable }) {
+function CampaignCard({
+  campaign,
+  onDisable,
+  onEdit,
+  onReactivate,
+}) {
   return (
     <article className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5">
       <div className="flex items-start justify-between gap-4">
@@ -327,14 +369,30 @@ function CampaignCard({ campaign, onDisable }) {
         </p>
       </div>
 
-      {campaign.is_active && (
+      <div className="mt-5 flex flex-wrap gap-3 text-sm">
         <button
-          onClick={() => onDisable(campaign.id)}
-          className="mt-5 text-sm text-red-400 hover:text-red-300 transition"
+          onClick={() => onEdit(campaign)}
+          className="text-cyan-300 hover:text-cyan-200 transition"
         >
-          Desactivar campaña
+          Editar
         </button>
-      )}
+
+        {campaign.is_active ? (
+          <button
+            onClick={() => onDisable(campaign.id)}
+            className="text-red-400 hover:text-red-300 transition"
+          >
+            Desactivar
+          </button>
+        ) : (
+          <button
+            onClick={() => onReactivate(campaign.id)}
+            className="text-green-400 hover:text-green-300 transition"
+          >
+            Reactivar
+          </button>
+        )}
+      </div>
     </article>
   )
 }

@@ -1,3 +1,5 @@
+import { buildFinalName } from "@/utils/buildFinalName"
+
 export async function fakeAiProcessor(families, config) {
 
   await new Promise((resolve) =>
@@ -8,17 +10,39 @@ export async function fakeAiProcessor(families, config) {
 
     const detectedCategory = "calefaccion"
 
-    return family.files.map((file, index) => {
+    return family.files.map((file) => {
+
+      const baseResult = {
+        piece:
+          file.piece || "manual",
+
+        format:
+          file.format || "manual",
+
+        campaign:
+          config.campaign,
+
+        category:
+          detectedCategory,
+
+        brand:
+          "",
+
+        date:
+          config.date,
+
+        country:
+          config.country,
+
+        descriptorMode:
+          config.descriptorMode || "category",
+      }
 
       const finalName =
-        [
-          file.piece || "manual",
-          file.format || "manual",
-          config.campaign,
-          detectedCategory,
-          config.date,
-          config.country,
-        ].join("-") + ".webp"
+        buildFinalName(
+          baseResult,
+          baseResult.descriptorMode
+        )
 
       return {
 
@@ -36,23 +60,7 @@ export async function fakeAiProcessor(families, config) {
         file:
           file.file,
 
-        piece:
-          file.piece || "manual",
-
-        format:
-          file.format || "manual",
-
-        campaign:
-          config.campaign,
-
-        category:
-          detectedCategory,
-
-        date:
-          config.date,
-
-        country:
-          config.country,
+        ...baseResult,
 
         finalName,
 

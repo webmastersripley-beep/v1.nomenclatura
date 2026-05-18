@@ -47,10 +47,10 @@ export default function EditStep({ onBack, onNext }) {
         }
       }
 
-      toast.success("Análisis IA completado")
+      toast.success("AnÃ¡lisis IA completado")
     } catch (error) {
       console.error(error)
-      toast.error("Error análisis masivo")
+      toast.error("Error anÃ¡lisis masivo")
     } finally {
       setIsBulkAnalyzing(false)
     }
@@ -59,7 +59,7 @@ export default function EditStep({ onBack, onNext }) {
   return (
     <>
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-        <h2 className="text-2xl font-bold">Edición de nomenclaturas</h2>
+        <h2 className="text-2xl font-bold">EdiciÃ³n de nomenclaturas</h2>
 
         <p className="text-zinc-400 mt-2 mb-6">
           Edita datos comunes por familia. Desglosa solo si necesitas cambiar formatos.
@@ -139,7 +139,7 @@ function FamilyCard({ family, updateResult, setSelectedImage }) {
       const fileToAnalyze = family.items.find((item) => item.file)?.file
 
       if (!fileToAnalyze) {
-        toast.error("No se encontró imagen para analizar.")
+        toast.error("No se encontrÃ³ imagen para analizar.")
         return
       }
 
@@ -213,12 +213,13 @@ function FamilyCard({ family, updateResult, setSelectedImage }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-4">
             <Field label="Pieza" value={firstItem.piece} onChange={(value) => updateFamilyField("piece", value)} />
-            <Field label="Campaña" value={firstItem.campaign} onChange={(value) => updateFamilyField("campaign", value)} />
-            <Field label="Categoría" value={firstItem.category} onChange={(value) => updateFamilyField("category", value)} />
+            <Field label="CampaÃ±a" value={firstItem.campaign} onChange={(value) => updateFamilyField("campaign", value)} />
+            <Field label="CategorÃ­a" value={firstItem.category} onChange={(value) => updateFamilyField("category", value)} />
+            <Field label="Marca" value={firstItem.brand} onChange={(value) => updateFamilyField("brand", value)} />
             <Field label="Fecha" value={firstItem.date} onChange={(value) => updateFamilyField("date", value)} />
-            <Field label="País" value={firstItem.country} onChange={(value) => updateFamilyField("country", value)} />
+            <Field label="PaÃ­s" value={firstItem.country} onChange={(value) => updateFamilyField("country", value)} />
           </div>
 
           <div className="mt-4 bg-black rounded-xl border border-zinc-800 p-3">
@@ -296,7 +297,7 @@ function FamilyCard({ family, updateResult, setSelectedImage }) {
                   </label>
                   <CompressionInfo item={item} />
                 </div>
-              ))}
+              ))} 
             </div>
           )}
         </div>
@@ -374,7 +375,7 @@ function CompressionInfo({ item }) {
       {item.originalSize && item.compressedSize && (
         <p className="text-[11px] text-yellow-300">
           {Math.round(item.originalSize / 1024)} KB
-          {" → "}
+          {" â†’ "}
           {Math.round(item.compressedSize / 1024)} KB
         </p>
       )}

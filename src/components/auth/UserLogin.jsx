@@ -5,11 +5,11 @@ import { findUserByName } from "@/services/userService"
 import { useUserStore } from "@/store/useUserStore"
 import CampaignManager from "@/components/campaigns/CampaignManager"
 import ConfigurationModal from "@/components/configuration/ConfigurationModal"
+import HistoryModal from "@/components/history/HistoryModal"
 export default function UserLogin() {
   const user = useUserStore((state) => state.user)
   const setUser = useUserStore((state) => state.setUser)
   const logout = useUserStore((state) => state.logout)
-  const preferences = useUserStore((state) => state.preferences)
   const setPreferences = useUserStore((state) => state.setPreferences)
   const [name, setName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
@@ -17,6 +17,7 @@ export default function UserLogin() {
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
   const [isCampaignManagerOpen, setIsCampaignManagerOpen ] = useState(false)
   const [isConfigurationOpen, setIsConfigurationOpen ] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const menuRef = useRef(null)
 
   useEffect(() => {
@@ -65,7 +66,7 @@ export default function UserLogin() {
       setName("")
     } catch (error) {
       console.error(error)
-      toast.error("Error iniciando sesión")
+      toast.error("Error iniciando sesiÃ³n")
     } finally {
       setIsLoading(false)
     }
@@ -118,7 +119,7 @@ export default function UserLogin() {
           </span>
 
           <span className="text-zinc-500 text-xs">
-            ▼
+            â–¼
           </span>
         </button>
 
@@ -167,7 +168,7 @@ export default function UserLogin() {
                 transition
               "
             >
-              Gestión campañas
+              GestiÃ³n campaÃ±as
             </button>
 
             <button
@@ -193,16 +194,33 @@ export default function UserLogin() {
 
             <button
               onClick={() => {
+                setIsHistoryOpen(true)
+                setIsMenuOpen(false)
+              }}
+              className="
+                w-full
+                text-left
+                px-4 py-3
+                text-sm
+                hover:bg-zinc-800
+                transition
+              "
+            >
+              Historial
+            </button>
+
+            <button
+              onClick={() => {
                 logout()
                 setIsMenuOpen(false)
-                toast.success("Sesión cerrada")
+                toast.success("SesiÃ³n cerrada")
               }}
               className="
                 w-full text-left px-4 py-3 text-sm text-red-400
                 hover:bg-red-500/10 transition
               "
             >
-              Cerrar sesión
+              Cerrar sesiÃ³n
             </button>
           </div>
         )}
@@ -228,6 +246,15 @@ export default function UserLogin() {
         <ConfigurationModal
           onClose={() =>
             setIsConfigurationOpen(
+              false
+            )
+          }
+        />
+      )}
+      {isHistoryOpen && (
+        <HistoryModal
+          onClose={() =>
+            setIsHistoryOpen(
               false
             )
           }
@@ -378,7 +405,7 @@ function PreferencesModal({ onClose }) {
               text-sm
             ">
               Configura reglas personales
-              para campañas,
+              para campaÃ±as,
               descargas y validaciones.
             </p>
 
@@ -395,7 +422,7 @@ function PreferencesModal({ onClose }) {
               text-xl
             "
           >
-            ✕
+            âœ•
           </button>
 
         </div>
@@ -413,16 +440,16 @@ function PreferencesModal({ onClose }) {
           ">
 
             <PreferenceCard
-              title="Campañas"
+              title="CampaÃ±as"
               description="
-                Reglas para campañas activas
+                Reglas para campaÃ±as activas
                 y valores por defecto.
               "
             >
 
               <FieldLabel
                 label="
-                  País predeterminado
+                  PaÃ­s predeterminado
                 "
               >
 
@@ -441,7 +468,7 @@ function PreferencesModal({ onClose }) {
                   </option>
 
                   <option value="pe">
-                    Perú
+                    PerÃº
                   </option>
 
 
@@ -459,14 +486,14 @@ function PreferencesModal({ onClose }) {
                   )
                 }
                 label="
-                  Usar campañas activas
+                  Usar campaÃ±as activas
                   por fecha y hora
                 "
               />
 
               <FieldLabel
                 label="
-                  Campaña por defecto
+                  CampaÃ±a por defecto
                 "
               >
 
@@ -489,7 +516,7 @@ function PreferencesModal({ onClose }) {
                 Modo de descarga
               "
               description="
-                Define cómo se organizará
+                Define cÃ³mo se organizarÃ¡
                 el ZIP final.
               "
             >
@@ -519,10 +546,10 @@ function PreferencesModal({ onClose }) {
                   </option>
 
                   <option value="directo">
-                    Imágenes directas en el ZIP
+                    ImÃ¡genes directas en el ZIP
                   </option>
                   <option value="por-formato">
-                    Imágenes separadas por formato
+                    ImÃ¡genes separadas por formato
                   </option>
 
                 </select>
@@ -631,7 +658,11 @@ function FieldLabel({ label, children }) {
   )
 }
 
-function CheckOption({ label, defaultChecked = false }) {
+function CheckOption({
+  label,
+  checked = false,
+  onChange,
+}) {
   return (
     <label
       className="
@@ -641,7 +672,8 @@ function CheckOption({ label, defaultChecked = false }) {
     >
       <input
         type="checkbox"
-        defaultChecked={defaultChecked}
+        checked={checked}
+        onChange={onChange}
         className="accent-fuchsia-500"
       />
 

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase"
+import { validateConfiguration } from "@/utils/validateConfiguration"
 
 export async function getUserPreferences(
   userId
@@ -104,6 +105,13 @@ export async function saveUserPreferences({
     updated_at:
       new Date()
         .toISOString(),
+  }
+
+  const configurationErrors =
+    validateConfiguration(payload)
+
+  if (configurationErrors.length > 0) {
+    throw new Error(configurationErrors[0])
   }
 
   const {
