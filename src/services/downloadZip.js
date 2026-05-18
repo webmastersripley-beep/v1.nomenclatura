@@ -1,31 +1,103 @@
 import JSZip from "jszip"
 import { saveAs } from "file-saver"
 
-export async function downloadZip(results) {
+import { useUserStore }
+  from "@/store/useUserStore"
+
+export async function downloadZip(
+  results
+) {
+
+  const preferences =
+    useUserStore.getState()
+      .preferences
+
+  const downloadMode =
+    preferences.download_mode
+    || "por-familia"
+
   const zip = new JSZip()
 
   results.forEach((item) => {
-    if (!item.file) return
 
-    const folderName = sanitizeFolderName(
-      item.piece || "manual"
-    )
+    if (!item.file) {
+      return
+    }
 
-    const fileName = sanitizeFileName(
-      item.finalName
-    )
+    const fileName =
+      sanitizeFileName(
+        item.finalName
+      )
 
-    zip.folder(folderName).file(
-      fileName,
-      item.file
-    )
+    if (
+      downloadMode === "directo"
+    ) {
+
+      zip.file(
+        fileName,
+        item.file
+      )
+
+      return
+    }
+
+    if (
+      downloadMode ===
+      "carpeta-unica"
+    ) {
+
+      zip
+        .folder("imagenes")
+        .file(
+          fileName,
+          item.file
+        )
+
+      return
+    }
+
+    if (
+      downloadMode ===
+      "por-formato"
+    ) {
+
+      const formatFolder =
+        sanitizeFolderName(
+          item.format ||
+          "otros"
+        )
+
+      zip
+        .folder(formatFolder)
+        .file(
+          fileName,
+          item.file
+        )
+
+      return
+    }
+
+    const familyFolder =
+      sanitizeFolderName(
+        item.piece ||
+        "manual"
+      )
+
+    zip
+      .folder(familyFolder)
+      .file(
+        fileName,
+        item.file
+      )
   })
 
-  const content = await zip.generateAsync({
-    type: "blob",
-  })
+  const content =
+    await zip.generateAsync({
+      type: "blob",
+    })
 
-  const date = getTodayFormatted()
+  const date =
+    getTodayFormatted()
 
   saveAs(
     content,
@@ -33,30 +105,55 @@ export async function downloadZip(results) {
   )
 }
 
-function sanitizeFileName(name) {
-  return name
+function sanitizeFileName(
+  name
+) {
+
+  return String(name || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
     .replace(/\s+/g, "-")
     .replace(/ñ/g, "n")
 }
 
-function sanitizeFolderName(name) {
-  return name
+function sanitizeFolderName(
+  name
+) {
+
+  return String(name || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
     .replace(/\s+/g, "-")
     .replace(/ñ/g, "n")
 }
 
 function getTodayFormatted() {
-  const today = new Date()
 
-  const day = String(today.getDate()).padStart(2, "0")
-  const month = String(today.getMonth() + 1).padStart(2, "0")
-  const year = String(today.getFullYear()).slice(-2)
+  const today =
+    new Date()
+
+  const day =
+    String(
+      today.getDate()
+    ).padStart(2, "0")
+
+  const month =
+    String(
+      today.getMonth() + 1
+    ).padStart(2, "0")
+
+  const year =
+    String(
+      today.getFullYear()
+    ).slice(-2)
 
   return `${day}${month}${year}`
 }
