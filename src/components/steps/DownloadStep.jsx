@@ -1,18 +1,21 @@
-/*DowloadStep.jsx */
 import { useState } from "react"
 import { toast } from "sonner"
 
 import { downloadZip } from "@/services/downloadZip"
+import { downloadImagesDirect } from "@/services/downloadImagesDirect"
 import { downloadMetadata } from "@/services/downloadMetadata"
 import { saveProcess } from "@/services/saveProcess"
 import { compressHeavyImages } from "@/services/compressImages"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
+import { useUserStore } from "@/store/useUserStore"
 import { validateResults } from "@/utils/validateResults"
 import { validateWarnings } from "@/utils/validateWarnings"
 
 export default function DownloadStep({ onBack }) {
   const results = useNomenclaturaStore((state) => state.results) || []
   const setResults = useNomenclaturaStore((state) => state.setResults)
+  const downloadMode = useUserStore((state) => state.preferences.download_mode)
+  const isDirectDownload = downloadMode === "directo"
 
   const [isSaving, setIsSaving] = useState(false)
   const [isCompressing, setIsCompressing] = useState(false)
@@ -42,13 +45,32 @@ const totalHeavyKb =
     try {
       setIsSaving(true)
 
+      if (isDirectDownload) {
+        const downloadResult = await downloadImagesDirect(results)
+
+        await saveProcess(results)
+
+        toast.success(
+          downloadResult.mode === "folder"
+            ? `Proceso guardado y ${downloadResult.count} imagen(es) guardada(s) en carpeta`
+            : `Proceso guardado y ${downloadResult.count} imagen(es) descargada(s)`
+        )
+        return
+      }
+
       await saveProcess(results)
       await downloadZip(results)
 
       toast.success("Proceso guardado y ZIP descargado")
     } catch (error) {
       console.error(error)
-      toast.error("Error guardando el proceso")
+
+      if (error?.name === "AbortError") {
+        toast.info("Descarga directa cancelada")
+        return
+      }
+
+      toast.error("Error guardando o descargando el proceso")
     } finally {
       setIsSaving(false)
     }
@@ -182,7 +204,11 @@ const totalHeavyKb =
             }
           `}
         >
-          {isSaving ? "Guardando..." : "Guardar y descargar ZIP"}
+          {isSaving
+            ? "Guardando..."
+            : isDirectDownload
+              ? "Guardar y descargar imágenes"
+              : "Guardar y descargar ZIP"}
         </button>
 
         <button
@@ -215,7 +241,11 @@ const totalHeavyKb =
             }
           `}
         >
-        {isCompressing ? "Comprimiendo..." : heavyFiles.length > 0 ? "Comprimir imágenes pesadas" : "Sin imágenes pesadas"} 
+        {isCompressing
+          ? "Comprimiendo..."
+          : heavyFiles.length > 0
+            ? "Comprimir imágenes pesadas"
+            : "Sin imágenes pesadas"}
         </button>
       </div>
     </div>

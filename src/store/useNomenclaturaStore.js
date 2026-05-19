@@ -18,6 +18,7 @@ export const useNomenclaturaStore = create((set) => ({
     campaign: "hg",
     country: "cl",
     date: getTodayFormatted(),
+    descriptorMode: "category",
   },
   activeCampaigns: [],
 
@@ -270,6 +271,7 @@ setDefaultConfig:
                 state.defaultConfig.date,
             },
             updatedItem.descriptorMode ||
+            state.defaultConfig.descriptorMode ||
             "category"
           )
 

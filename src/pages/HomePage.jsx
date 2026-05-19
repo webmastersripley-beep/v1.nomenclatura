@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { toast } from "sonner"
 
 import ImageUploader from "@/components/upload/ImageUploader"
@@ -13,7 +13,7 @@ import CampaignSelectionModal from "@/components/campaigns/CampaignSelectionModa
 import { fakeAiProcessor } from "@/services/fakeAiProcessor"
 import { getActiveCampaigns } from "@/services/campaignService"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
-import { useUserStore } from "@/store/useUserStore"
+import { defaultPreferences, useUserStore } from "@/store/useUserStore"
 
 export default function HomePage() {
   const {
@@ -29,8 +29,29 @@ export default function HomePage() {
     setSelectedCampaign,
   } = useNomenclaturaStore()
 
+  const user = useUserStore((state) => state.user)
   const preferences =
     useUserStore((state) => state.preferences)
+
+  const effectivePreferences = user
+    ? preferences
+    : defaultPreferences
+
+  const effectiveDescriptorMode =
+    effectivePreferences.descriptor_mode || "category"
+
+  useEffect(() => {
+    setDefaultConfig({
+      country: effectivePreferences.default_country || "cl",
+      campaign: effectivePreferences.default_campaign || "hg",
+      descriptorMode: effectiveDescriptorMode,
+    })
+  }, [
+    effectivePreferences.default_country,
+    effectivePreferences.default_campaign,
+    effectiveDescriptorMode,
+    setDefaultConfig,
+  ])
 
   const [campaignOptions, setCampaignOptions] = useState([])
   const [showCampaignSelector, setShowCampaignSelector] = useState(false)
@@ -59,23 +80,21 @@ export default function HomePage() {
 
   const handleProcessFamilies = async () => {
     const country =
-      preferences.default_country ||
+      effectivePreferences.default_country ||
       defaultConfig.country ||
       "cl"
 
     const fallbackCampaign =
-      preferences.default_campaign ||
+      effectivePreferences.default_campaign ||
       defaultConfig.campaign ||
       "hg"
 
-    if (!preferences.use_active_campaigns) {
+    if (!effectivePreferences.use_active_campaigns) {
       const config = {
         ...defaultConfig,
         country,
         campaign: fallbackCampaign,
-        descriptorMode:
-          preferences.descriptor_mode ||
-          "category",
+        descriptorMode: effectiveDescriptorMode,
       }
 
       setDefaultConfig(config)
@@ -91,9 +110,7 @@ export default function HomePage() {
         ...defaultConfig,
         country,
         campaign: fallbackCampaign,
-        descriptorMode:
-          preferences.descriptor_mode ||
-          "category",
+        descriptorMode: effectiveDescriptorMode,
       }
 
       setDefaultConfig(config)
@@ -114,9 +131,7 @@ export default function HomePage() {
         ...defaultConfig,
         country,
         campaign: campaign.code,
-        descriptorMode:
-          preferences.descriptor_mode ||
-          "category",
+        descriptorMode: effectiveDescriptorMode,
       }
 
       setDefaultConfig(config)
@@ -141,7 +156,7 @@ export default function HomePage() {
     }
 
     const country =
-      preferences.default_country ||
+      effectivePreferences.default_country ||
       defaultConfig.country ||
       "cl"
 
@@ -149,9 +164,7 @@ export default function HomePage() {
       ...defaultConfig,
       country,
       campaign: campaign.code,
-      descriptorMode:
-        preferences.descriptor_mode ||
-        "category",
+      descriptorMode: effectiveDescriptorMode,
     }
 
     setDefaultConfig(config)
@@ -165,74 +178,82 @@ export default function HomePage() {
   return (
 
     <main className={`
-      min-h-screen
+      min-h-[100dvh]
+      overflow-x-hidden
+      bg-black
       text-white
       relative
-      overflow-hidden
-      ${themeMap[
-        preferences.theme_preset
-      ] || themeMap.midnight}
-    `}>
+      isolate
+    `}
+      style={{
+        background:
+          themeBackgroundMap[effectivePreferences.theme_preset] ||
+          themeBackgroundMap.midnight,
+      }}
+    >
 
-      {(preferences.background_type ===
+      {(effectivePreferences.background_type ===
         "image" ||
-        preferences.background_type ===
+        effectivePreferences.background_type ===
         "mixed") &&
 
-        preferences.background_image_url && (
+        effectivePreferences.background_image_url && (
 
         <div
           className="
-            absolute inset-0
+            pointer-events-none fixed inset-0
             bg-cover bg-center
             z-0
           "
           style={{
 
             backgroundImage:
-              `url(${preferences.background_image_url})`,
+              `url(${effectivePreferences.background_image_url})`,
 
             opacity:
-              preferences.background_opacity || 0.15,
+              effectivePreferences.background_opacity || 0.15,
           }}
         />
       )}
 
-      {preferences.enable_blobs && (
+      {effectivePreferences.enable_blobs && (
         <>
 
           <div className="
-            absolute
-            top-[-120px]
-            left-[-120px]
+            pointer-events-none
+            fixed
+            top-[-160px]
+            left-[-160px]
             w-[420px]
             h-[420px]
             rounded-full
-            bg-fuchsia-500/20
+            bg-fuchsia-500/14
             blur-3xl
             z-0
           " />
 
           <div className="
-            absolute
-            bottom-[-160px]
-            right-[-160px]
-            w-[500px]
-            h-[500px]
+            pointer-events-none
+            fixed
+            bottom-[-260px]
+            right-[-260px]
+            w-[420px]
+            h-[420px]
             rounded-full
-            bg-cyan-500/20
+            bg-cyan-500/8
             blur-3xl
             z-0
           " />
 
           <div className="
-            absolute
+            pointer-events-none
+            fixed
             top-[30%]
             left-[50%]
             w-[280px]
             h-[280px]
             rounded-full
-            bg-purple-500/10
+            bg-purple-500/8
             blur-3xl
             z-0
           " />
@@ -241,9 +262,9 @@ export default function HomePage() {
       )}
 
       <div className="
-        absolute inset-0
-        bg-black/40
-        backdrop-blur-[2px]
+        pointer-events-none fixed inset-0
+        bg-black/50
+        backdrop-blur-[1px]
         z-0
       " />
 
@@ -368,20 +389,19 @@ export default function HomePage() {
     </main>
   )
 }
-const themeMap = {
-
+const themeBackgroundMap = {
   midnight:
-    "bg-gradient-to-br from-zinc-950 via-black to-zinc-900",
+    "radial-gradient(circle at 8% 0%, rgba(39,39,42,0.38), transparent 32%), radial-gradient(circle at 92% 8%, rgba(24,24,27,0.35), transparent 30%), #000",
 
   cyber:
-    "bg-gradient-to-br from-fuchsia-950 via-zinc-950 to-cyan-950",
+    "radial-gradient(circle at 0% 0%, rgba(112,26,117,0.38), transparent 34%), radial-gradient(circle at 100% 8%, rgba(8,145,178,0.18), transparent 30%), #000",
 
   ocean:
-    "bg-gradient-to-br from-cyan-950 via-blue-950 to-zinc-950",
+    "radial-gradient(circle at 0% 0%, rgba(14,116,144,0.28), transparent 34%), radial-gradient(circle at 100% 10%, rgba(30,64,175,0.18), transparent 30%), #000",
 
   sunset:
-    "bg-gradient-to-br from-orange-950 via-fuchsia-950 to-black",
+    "radial-gradient(circle at 0% 0%, rgba(194,65,12,0.26), transparent 34%), radial-gradient(circle at 100% 8%, rgba(157,23,77,0.22), transparent 30%), #000",
 
   luxury:
-    "bg-gradient-to-br from-yellow-950 via-black to-zinc-950",
+    "radial-gradient(circle at 0% 0%, rgba(113,63,18,0.28), transparent 34%), radial-gradient(circle at 100% 8%, rgba(202,138,4,0.12), transparent 28%), #000",
 }

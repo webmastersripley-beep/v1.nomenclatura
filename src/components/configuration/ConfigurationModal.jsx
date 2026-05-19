@@ -39,6 +39,10 @@ export default function ConfigurationModal({
     useNomenclaturaStore(
       (state) => state.recomputeFinalNames
     )
+  const setDefaultConfig =
+    useNomenclaturaStore(
+      (state) => state.setDefaultConfig
+    )
 
   const [themePreset, setThemePreset] =
     useState(preferences.theme_preset || "midnight")
@@ -146,27 +150,17 @@ export default function ConfigurationModal({
 
     try {
       setIsSaving(true)
-      await saveUserPreferences(payload)
+      const savedPreferences =
+        await saveUserPreferences(payload)
 
-      setPreferences({
-        theme_preset:
-          themePreset,
-
-        background_type:
-          backgroundType,
-
-        enable_blobs:
-          enableBlobs,
-
-        descriptor_mode:
-          descriptorMode,
-
-        background_image_url:
-          backgroundImageUrl.trim(),
-
-        background_opacity:
-          Number(backgroundOpacity),
-      })
+      if (savedPreferences) {
+        setPreferences(savedPreferences)
+        setDefaultConfig({
+          country: savedPreferences.default_country,
+          campaign: savedPreferences.default_campaign,
+          descriptorMode: savedPreferences.descriptor_mode || "category",
+        })
+      }
 
       recomputeFinalNames(descriptorMode)
 
@@ -224,7 +218,7 @@ export default function ConfigurationModal({
               transition
             "
           >
-            ✕
+            ×
           </button>
         </div>
 

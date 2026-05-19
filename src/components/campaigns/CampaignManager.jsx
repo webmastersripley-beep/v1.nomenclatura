@@ -9,6 +9,7 @@ import {
   disableCampaign,
   updateCampaign,
   reactivateCampaign,
+  getCampaignRuntimeStatus,
 } from "@/services/campaignService"
 
 import { useUserStore } from "@/store/useUserStore"
@@ -34,6 +35,7 @@ export default function CampaignManager({ onClose }) {
 
   async function loadCampaigns() {
     try {
+      setIsLoading(true)
       const data = await getAllCampaigns(form.country)
       setCampaigns(data)
     } catch (error) {
@@ -60,15 +62,23 @@ export default function CampaignManager({ onClose }) {
       setIsSaving(true)
 
       if (editingId) {
-        await updateCampaign(editingId, form)
-        toast.success("Campaña actualizada")
+        const updatedCampaign = await updateCampaign(editingId, form)
+        toast.success(
+          updatedCampaign.is_active
+            ? "Campaña actualizada"
+            : "Campaña actualizada como inactiva"
+        )
       } else {
-        await createCampaign({
+        const createdCampaign = await createCampaign({
           ...form,
           created_by_name: user?.name || "anonimo",
           created_by_id: user?.id || null,
         })
-        toast.success("Campaña creada")
+        toast.success(
+          createdCampaign.is_active
+            ? "Campaña creada"
+            : "Campaña creada como inactiva porque ya venció"
+        )
       }
 
       resetForm()
@@ -319,6 +329,19 @@ function CampaignCard({
   onEdit,
   onReactivate,
 }) {
+  const status = getCampaignRuntimeStatus(campaign)
+  const statusLabel = {
+    active: "Activa",
+    inactive: "Inactiva",
+    expired: "Vencida",
+  }[status]
+
+  const statusClass = {
+    active: "bg-green-500/20 text-green-400",
+    inactive: "bg-zinc-800 text-zinc-500",
+    expired: "bg-yellow-500/15 text-yellow-300",
+  }[status]
+
   return (
     <article className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5">
       <div className="flex items-start justify-between gap-4">
@@ -335,14 +358,10 @@ function CampaignCard({
         <span
           className={`
             text-xs px-2 py-1 rounded-full shrink-0
-            ${
-              campaign.is_active
-                ? "bg-green-500/20 text-green-400"
-                : "bg-zinc-800 text-zinc-500"
-            }
+            ${statusClass}
           `}
         >
-          {campaign.is_active ? "Activa" : "Inactiva"}
+          {statusLabel}
         </span>
       </div>
 
@@ -377,14 +396,16 @@ function CampaignCard({
           Editar
         </button>
 
-        {campaign.is_active ? (
+        {status === "active" && (
           <button
             onClick={() => onDisable(campaign.id)}
             className="text-red-400 hover:text-red-300 transition"
           >
             Desactivar
           </button>
-        ) : (
+        )}
+
+        {status === "inactive" && (
           <button
             onClick={() => onReactivate(campaign.id)}
             className="text-green-400 hover:text-green-300 transition"
@@ -392,11 +413,16 @@ function CampaignCard({
             Reactivar
           </button>
         )}
+
+        {status === "expired" && (
+          <span className="text-zinc-500">
+            Edita la fecha para reactivar
+          </span>
+        )}
       </div>
     </article>
   )
 }
-
 function formatDateTime(value) {
   if (!value) return "sin fecha"
 

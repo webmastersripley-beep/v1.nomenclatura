@@ -1,6 +1,19 @@
 import { supabase } from "@/lib/supabase"
 import { validateConfiguration } from "@/utils/validateConfiguration"
 
+const DEFAULT_PREFERENCES = {
+  default_country: "cl",
+  default_campaign: "hg",
+  download_mode: "por-familia",
+  use_active_campaigns: true,
+  theme_preset: "midnight",
+  background_type: "gradient",
+  background_image_url: "",
+  background_opacity: 0.15,
+  enable_blobs: true,
+  descriptor_mode: "category",
+}
+
 export async function getUserPreferences(
   userId
 ) {
@@ -22,89 +35,32 @@ export async function getUserPreferences(
     .maybeSingle()
 
   if (error) {
-
     console.error(error)
-
     return null
   }
 
   return data
 }
 
-export async function saveUserPreferences({
+export async function saveUserPreferences(
+  partialPreferences
+) {
+  const appUserId =
+    partialPreferences?.app_user_id
 
-  app_user_id,
-
-  default_country,
-
-  default_campaign,
-
-  download_mode,
-
-  use_active_campaigns,
-
-  theme_preset,
-
-  background_type,
-
-  background_image_url,
-
-  background_opacity,
-
-  enable_blobs,
-
-  descriptor_mode,
-}) {
-
-  if (!app_user_id) {
+  if (!appUserId) {
     return null
   }
 
+  const existingPreferences =
+    await getUserPreferences(appUserId)
+
   const payload = {
-
-    app_user_id,
-
-    default_country:
-      default_country || "cl",
-
-    default_campaign:
-      default_campaign || "hg",
-
-    download_mode:
-      download_mode ||
-      "por-familia",
-
-    use_active_campaigns:
-      use_active_campaigns
-      ?? true,
-
-    theme_preset:
-      theme_preset ||
-      "midnight",
-
-    background_type:
-      background_type ||
-      "gradient",
-
-    background_image_url:
-      background_image_url ||
-      "",
-
-    background_opacity:
-      background_opacity
-      ?? 0.15,
-
-    enable_blobs:
-      enable_blobs
-      ?? true,
-
-    descriptor_mode:
-      descriptor_mode ||
-      "category",
-
-    updated_at:
-      new Date()
-        .toISOString(),
+    ...DEFAULT_PREFERENCES,
+    ...(existingPreferences || {}),
+    ...removeUndefinedValues(partialPreferences),
+    app_user_id: appUserId,
+    updated_at: new Date().toISOString(),
   }
 
   const configurationErrors =
@@ -127,13 +83,19 @@ export async function saveUserPreferences({
     .single()
 
   if (error) {
-
     console.error(error)
-
     throw new Error(
       "Error guardando preferencias"
     )
   }
 
   return data
+}
+
+function removeUndefinedValues(value) {
+  return Object.fromEntries(
+    Object.entries(value || {}).filter(
+      ([, item]) => item !== undefined
+    )
+  )
 }

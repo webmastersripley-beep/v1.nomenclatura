@@ -9,6 +9,7 @@ import ImageModal from "@/components/common/ImageModal"
 export default function EditStep({ onBack, onNext }) {
   const results = useNomenclaturaStore((state) => state.results) || []
   const updateResult = useNomenclaturaStore((state) => state.updateResult)
+  const defaultConfig = useNomenclaturaStore((state) => state.defaultConfig)
 
   const groupedFamilies = groupByPiece(results)
 
@@ -47,10 +48,10 @@ export default function EditStep({ onBack, onNext }) {
         }
       }
 
-      toast.success("AnÃ¡lisis IA completado")
+      toast.success("Análisis IA completado")
     } catch (error) {
       console.error(error)
-      toast.error("Error anÃ¡lisis masivo")
+      toast.error("Error análisis masivo")
     } finally {
       setIsBulkAnalyzing(false)
     }
@@ -59,7 +60,7 @@ export default function EditStep({ onBack, onNext }) {
   return (
     <>
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-        <h2 className="text-2xl font-bold">EdiciÃ³n de nomenclaturas</h2>
+        <h2 className="text-2xl font-bold">Edición de nomenclaturas</h2>
 
         <p className="text-zinc-400 mt-2 mb-6">
           Edita datos comunes por familia. Desglosa solo si necesitas cambiar formatos.
@@ -89,6 +90,7 @@ export default function EditStep({ onBack, onNext }) {
             <FamilyCard
               key={family.familyId}
               family={family}
+              defaultConfig={defaultConfig}
               updateResult={updateResult}
               setSelectedImage={setSelectedImage}
             />
@@ -120,11 +122,22 @@ export default function EditStep({ onBack, onNext }) {
   )
 }
 
-function FamilyCard({ family, updateResult, setSelectedImage }) {
+function FamilyCard({
+  family,
+  defaultConfig,
+  updateResult,
+  setSelectedImage,
+}) {
   const [expanded, setExpanded] = useState(false)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   const firstItem = family.items[0]
+  const descriptorMode =
+    firstItem.descriptorMode ||
+    defaultConfig?.descriptorMode ||
+    "category"
+  const descriptorFields =
+    getDescriptorFields(descriptorMode)
 
   const updateFamilyField = (field, value) => {
     family.items.forEach((item) => {
@@ -139,7 +152,7 @@ function FamilyCard({ family, updateResult, setSelectedImage }) {
       const fileToAnalyze = family.items.find((item) => item.file)?.file
 
       if (!fileToAnalyze) {
-        toast.error("No se encontrÃ³ imagen para analizar.")
+        toast.error("No se encontró imagen para analizar.")
         return
       }
 
@@ -214,12 +227,17 @@ function FamilyCard({ family, updateResult, setSelectedImage }) {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-4">
-            <Field label="Pieza" value={firstItem.piece} onChange={(value) => updateFamilyField("piece", value)} />
-            <Field label="CampaÃ±a" value={firstItem.campaign} onChange={(value) => updateFamilyField("campaign", value)} />
-            <Field label="CategorÃ­a" value={firstItem.category} onChange={(value) => updateFamilyField("category", value)} />
-            <Field label="Marca" value={firstItem.brand} onChange={(value) => updateFamilyField("brand", value)} />
+            <Field label="Campaña" value={firstItem.campaign} onChange={(value) => updateFamilyField("campaign", value)} />
+            {descriptorFields.map((field) => (
+              <Field
+                key={field}
+                label={field === "brand" ? "Marca" : "Categoría"}
+                value={field === "brand" ? firstItem.brand : firstItem.category}
+                onChange={(value) => updateFamilyField(field, value)}
+              />
+            ))}
             <Field label="Fecha" value={firstItem.date} onChange={(value) => updateFamilyField("date", value)} />
-            <Field label="PaÃ­s" value={firstItem.country} onChange={(value) => updateFamilyField("country", value)} />
+            <Field label="País" value={firstItem.country} onChange={(value) => updateFamilyField("country", value)} />
           </div>
 
           <div className="mt-4 bg-black rounded-xl border border-zinc-800 p-3">
@@ -332,16 +350,43 @@ function FamilyCard({ family, updateResult, setSelectedImage }) {
 
 function Field({ label, value, onChange }) {
   return (
-    <label className="space-y-1">
-      <span className="text-xs text-zinc-500">{label}</span>
+    <label className="space-y-2">
+      <span className="text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">
+        {label}
+      </span>
 
       <input
         value={value || ""}
         onChange={(event) => onChange(event.target.value.toLowerCase())}
-        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-zinc-500"
+        placeholder="—"
+        className="
+          h-11 w-full
+          rounded-xl border border-zinc-800
+          bg-zinc-900/80 px-3
+          text-sm text-white
+          outline-none transition
+          placeholder:text-zinc-600
+          focus:border-zinc-500 focus:bg-zinc-900
+        "
       />
     </label>
   )
+}
+
+function getDescriptorFields(descriptorMode = "category") {
+  if (descriptorMode === "brand") {
+    return ["brand"]
+  }
+
+  if (descriptorMode === "brand-category") {
+    return ["brand", "category"]
+  }
+
+  if (descriptorMode === "category-brand") {
+    return ["category", "brand"]
+  }
+
+  return ["category"]
 }
 
 function groupByPiece(results) {
@@ -375,7 +420,7 @@ function CompressionInfo({ item }) {
       {item.originalSize && item.compressedSize && (
         <p className="text-[11px] text-yellow-300">
           {Math.round(item.originalSize / 1024)} KB
-          {" â†’ "}
+          {" → "}
           {Math.round(item.compressedSize / 1024)} KB
         </p>
       )}

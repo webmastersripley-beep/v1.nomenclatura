@@ -5,6 +5,8 @@ const CAMPAIGN_CODE_PATTERN = /^[a-z0-9-]+$/
 export async function getActiveCampaigns(country = "cl") {
   const now = new Date().toISOString()
 
+  await deactivateExpiredCampaigns(country, now)
+
   const { data, error } = await supabase
     .from("campaigns")
     .select(`
@@ -31,6 +33,8 @@ export async function getActiveCampaigns(country = "cl") {
 }
 
 export async function getAllCampaigns(country = "cl") {
+  await deactivateExpiredCampaigns(country)
+
   const { data, error } = await supabase
     .from("campaigns")
     .select("*")
@@ -42,7 +46,10 @@ export async function getAllCampaigns(country = "cl") {
     return []
   }
 
-  return data || []
+  return (data || []).map((campaign) => ({
+    ...campaign,
+    is_active: Boolean(campaign.is_active) && !isCampaignExpired(campaign),
+  }))
 }
 
 export async function createCampaign({
@@ -63,7 +70,11 @@ export async function createCampaign({
     is_active: true,
   })
 
-  await assertMaxSimultaneousCampaigns(payload)
+  payload.is_active = !isCampaignExpired(payload)
+
+  if (payload.is_active) {
+    await assertMaxSimultaneousCampaigns(payload)
+  }
 
   const { data, error } = await supabase
     .from("campaigns")
@@ -97,7 +108,18 @@ export async function updateCampaign(id, payload) {
 
   validateCampaignRange(mergedCampaign.start_at, mergedCampaign.end_at)
 
-  if (mergedCampaign.is_active) {
+  const wantsActive = Boolean(mergedCampaign.is_active)
+  const finalIsActive = wantsActive && !isCampaignExpired(mergedCampaign)
+
+  if (
+    Object.hasOwn(payload, "is_active") ||
+    currentCampaign.is_active ||
+    isCampaignExpired(mergedCampaign)
+  ) {
+    normalizedPayload.is_active = finalIsActive
+  }
+
+  if (finalIsActive) {
     await assertMaxSimultaneousCampaigns(mergedCampaign, id)
   }
 
@@ -126,6 +148,12 @@ export async function disableCampaign(id) {
 }
 
 export async function reactivateCampaign(id) {
+  const campaign = await getCampaignById(id)
+
+  if (isCampaignExpired(campaign)) {
+    throw new Error("No se puede reactivar una campaña vencida. Edita la fecha de término primero.")
+  }
+
   return updateCampaign(id, {
     is_active: true,
   })
@@ -137,6 +165,7 @@ export async function getOverlappingActiveCampaigns({
   end_at,
   excludeId,
 }) {
+  const now = new Date().toISOString()
   const startIso = normalizeDateToIso(start_at)
   const endIso = normalizeDateToIso(end_at)
 
@@ -147,6 +176,7 @@ export async function getOverlappingActiveCampaigns({
     .eq("country", country)
     .lte("start_at", endIso)
     .gte("end_at", startIso)
+    .gte("end_at", now)
 
   if (excludeId) {
     query = query.neq("id", excludeId)
@@ -160,6 +190,38 @@ export async function getOverlappingActiveCampaigns({
   }
 
   return data || []
+}
+
+export function isCampaignExpired(campaign) {
+  if (!campaign?.end_at) return false
+  return new Date(campaign.end_at).getTime() < Date.now()
+}
+
+export function getCampaignRuntimeStatus(campaign) {
+  if (isCampaignExpired(campaign)) return "expired"
+  if (campaign?.is_active) return "active"
+  return "inactive"
+}
+
+async function deactivateExpiredCampaigns(country, now = new Date().toISOString()) {
+  let query = supabase
+    .from("campaigns")
+    .update({
+      is_active: false,
+      updated_at: now,
+    })
+    .eq("is_active", true)
+    .lt("end_at", now)
+
+  if (country) {
+    query = query.eq("country", country)
+  }
+
+  const { error } = await query
+
+  if (error) {
+    console.error(error)
+  }
 }
 
 async function getCampaignById(id) {
