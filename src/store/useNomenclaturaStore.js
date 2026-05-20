@@ -81,7 +81,7 @@ setDefaultConfig:
 
       if (!manualFile || !targetFamily) return state
 
-      const cleanFormat = (
+      const requestedFormat = (
         format ||
         manualFile.format ||
         manualFile.detectedFormat ||
@@ -90,12 +90,22 @@ setDefaultConfig:
         .trim()
         .toLowerCase()
 
+      const existingFormats = new Set(
+        targetFamily.files
+          .map((file) => file.format || file.detectedFormat || "")
+          .filter(Boolean)
+      )
+
+      const missingFormats = ["desk", "mb", "app"].filter(
+        (item) => !existingFormats.has(item)
+      )
+
+      const cleanFormat =
+        requestedFormat || (missingFormats.length === 1 ? missingFormats[0] : "")
+
       if (!cleanFormat) return state
 
-      const formatExists = targetFamily.files.some(
-        (file) =>
-          file.format === cleanFormat || file.detectedFormat === cleanFormat
-      )
+      const formatExists = existingFormats.has(cleanFormat)
 
       if (formatExists) return state
 

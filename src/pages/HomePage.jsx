@@ -35,26 +35,35 @@ export default function HomePage() {
 
   const effectivePreferences = user
     ? preferences
-    : defaultPreferences
+    : {
+        ...defaultPreferences,
+        use_active_campaigns: false,
+      }
 
   const effectiveDescriptorMode =
     effectivePreferences.descriptor_mode || "category"
 
+  const [campaignOptions, setCampaignOptions] = useState([])
+  const [showCampaignSelector, setShowCampaignSelector] = useState(false)
+
   useEffect(() => {
+    if (!user) {
+      setSelectedCampaign(null)
+    }
+
     setDefaultConfig({
       country: effectivePreferences.default_country || "cl",
       campaign: effectivePreferences.default_campaign || "hg",
       descriptorMode: effectiveDescriptorMode,
     })
   }, [
+    user,
     effectivePreferences.default_country,
     effectivePreferences.default_campaign,
     effectiveDescriptorMode,
     setDefaultConfig,
+    setSelectedCampaign,
   ])
-
-  const [campaignOptions, setCampaignOptions] = useState([])
-  const [showCampaignSelector, setShowCampaignSelector] = useState(false)
 
   const handleFilesReady = (groupedData) => {
     setFamilies(groupedData.families)
@@ -89,7 +98,7 @@ export default function HomePage() {
       defaultConfig.campaign ||
       "hg"
 
-    if (!effectivePreferences.use_active_campaigns) {
+    if (!user || !effectivePreferences.use_active_campaigns) {
       const config = {
         ...defaultConfig,
         country,
@@ -98,6 +107,7 @@ export default function HomePage() {
       }
 
       setDefaultConfig(config)
+      setSelectedCampaign(null)
       await processWithConfig(config)
       return
     }
@@ -263,7 +273,7 @@ export default function HomePage() {
 
       <div className="
         pointer-events-none fixed inset-0
-        bg-black/50
+        bg-black/25
         backdrop-blur-[1px]
         z-0
       " />
@@ -367,7 +377,7 @@ export default function HomePage() {
           />
         )}
 
-        {showCampaignSelector && (
+        {user && showCampaignSelector && (
 
           <CampaignSelectionModal
             campaigns={
@@ -391,17 +401,17 @@ export default function HomePage() {
 }
 const themeBackgroundMap = {
   midnight:
-    "radial-gradient(circle at 8% 0%, rgba(39,39,42,0.38), transparent 32%), radial-gradient(circle at 92% 8%, rgba(24,24,27,0.35), transparent 30%), #000",
+    "linear-gradient(135deg, rgb(9,9,11) 0%, rgb(0,0,0) 48%, rgb(24,24,27) 100%)",
 
   cyber:
-    "radial-gradient(circle at 0% 0%, rgba(112,26,117,0.38), transparent 34%), radial-gradient(circle at 100% 8%, rgba(8,145,178,0.18), transparent 30%), #000",
+    "linear-gradient(135deg, rgb(74,4,78) 0%, rgb(9,9,11) 52%, rgb(8,51,68) 100%)",
 
   ocean:
-    "radial-gradient(circle at 0% 0%, rgba(14,116,144,0.28), transparent 34%), radial-gradient(circle at 100% 10%, rgba(30,64,175,0.18), transparent 30%), #000",
+    "linear-gradient(135deg, rgb(8,51,68) 0%, rgb(23,37,84) 50%, rgb(9,9,11) 100%)",
 
   sunset:
-    "radial-gradient(circle at 0% 0%, rgba(194,65,12,0.26), transparent 34%), radial-gradient(circle at 100% 8%, rgba(157,23,77,0.22), transparent 30%), #000",
+    "linear-gradient(135deg, rgb(124,45,18) 0%, rgb(80,7,36) 52%, rgb(0,0,0) 100%)",
 
   luxury:
-    "radial-gradient(circle at 0% 0%, rgba(113,63,18,0.28), transparent 34%), radial-gradient(circle at 100% 8%, rgba(202,138,4,0.12), transparent 28%), #000",
+    "linear-gradient(135deg, rgb(113,63,18) 0%, rgb(0,0,0) 52%, rgb(9,9,11) 100%)",
 }

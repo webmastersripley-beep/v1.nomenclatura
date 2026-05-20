@@ -1,5 +1,17 @@
 import { useState } from "react"
-import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core"
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  pointerWithin,
+  rectIntersection,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core"
+import { toast } from "sonner"
 
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
 
@@ -13,12 +25,58 @@ export default function ReviewStep({ families, onBack, onNext }) {
   const [showManuals, setShowManuals] = useState(true)
   const [selectedImage, setSelectedImage] = useState(null)
   const [activeFamilyId, setActiveFamilyId] = useState(null)
+  const [activeDrag, setActiveDrag] = useState(null)
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    })
+  )
 
   const activeFamily =
     families.find((family) => family.familyId === activeFamilyId) || null
 
+  const collisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args)
+
+    return pointerCollisions.length > 0
+      ? pointerCollisions
+      : rectIntersection(args)
+  }
+
+  const getAvailableFormat = (targetFamily, requestedFormat) => {
+    const cleanFormat = (requestedFormat || "").trim().toLowerCase()
+    const existingFormats = new Set(
+      targetFamily.files
+        .map((file) => file.format || file.detectedFormat || "")
+        .filter(Boolean)
+    )
+
+    if (cleanFormat) {
+      return existingFormats.has(cleanFormat) ? null : cleanFormat
+    }
+
+    const missingFormats = ["desk", "mb", "app"].filter(
+      (format) => !existingFormats.has(format)
+    )
+
+    return missingFormats.length === 1 ? missingFormats[0] : ""
+  }
+
+  const handleDragStart = (event) => {
+    setActiveDrag(event.active.data.current || null)
+  }
+
   const handleDragEnd = (event) => {
     const { active, over } = event
+    setActiveDrag(null)
 
     if (!over) return
 
@@ -28,14 +86,52 @@ export default function ReviewStep({ families, onBack, onNext }) {
     if (!activeData || !overData) return
 
     if (activeData.type === "manual" && overData.type === "family") {
+      const targetFamily = families.find(
+        (family) => family.familyId === overData.familyId
+      )
+
+      if (!targetFamily) return
+
+      const resolvedFormat = getAvailableFormat(
+        targetFamily,
+        activeData.format || activeData.detectedFormat
+      )
+
+      if (resolvedFormat === null) {
+        toast.error("Esa familia ya tiene una pieza con ese formato.")
+        return
+      }
+
+      if (!resolvedFormat) {
+        toast.error("Selecciona formato antes de mover esta pieza.")
+        return
+      }
+
       moveManualToFamily(
         activeData.manualId,
         overData.familyId,
-        activeData.format || ""
+        resolvedFormat
       )
     }
 
     if (activeData.type === "family-file" && overData.type === "family") {
+      const targetFamily = families.find(
+        (family) => family.familyId === overData.familyId
+      )
+
+      if (targetFamily) {
+        const duplicateFormat = targetFamily.files.some(
+          (file) =>
+            (file.format || file.detectedFormat) ===
+            (activeData.format || activeData.detectedFormat)
+        )
+
+        if (activeData.sourceFamilyId !== overData.familyId && duplicateFormat) {
+          toast.error("Esa familia ya tiene una pieza con ese formato.")
+          return
+        }
+      }
+
       moveFileToFamily(
         activeData.originalName,
         activeData.sourceFamilyId,
@@ -53,7 +149,13 @@ export default function ReviewStep({ families, onBack, onNext }) {
 
   return (
     <>
-      <DndContext onDragEnd={handleDragEnd}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={handleDragStart}
+        onDragCancel={() => setActiveDrag(null)}
+        onDragEnd={handleDragEnd}
+      >
         <section className="
           relative overflow-hidden
           rounded-[2.25rem]
@@ -158,6 +260,11 @@ export default function ReviewStep({ families, onBack, onNext }) {
             onClose={() => setActiveFamilyId(null)}
           />
         )}
+        <DragOverlay dropAnimation={null}>
+          {activeDrag ? (
+            <DragPreview drag={activeDrag} />
+          ) : null}
+        </DragOverlay>
       </DndContext>
 
       {selectedImage && (
@@ -167,6 +274,46 @@ export default function ReviewStep({ families, onBack, onNext }) {
         />
       )}
     </>
+  )
+}
+
+function DragPreview({ drag }) {
+  const file = drag.file
+
+  if (!file) return null
+
+  return (
+    <div className="
+      pointer-events-none
+      w-[280px] overflow-hidden
+      rounded-[1.35rem]
+      border border-white/25
+      bg-zinc-950/95
+      p-2.5
+      shadow-[0_24px_80px_rgba(0,0,0,0.55)]
+      backdrop-blur-xl
+    ">
+      <div className="grid min-h-[76px] grid-cols-[72px_minmax(0,1fr)] gap-3">
+        {file.previewUrl ? (
+          <img
+            src={file.previewUrl}
+            alt={file.originalName}
+            className="h-[72px] w-[72px] rounded-2xl border border-white/10 bg-black object-cover"
+          />
+        ) : (
+          <div className="h-[72px] w-[72px] rounded-2xl bg-zinc-800" />
+        )}
+
+        <div className="min-w-0 self-center">
+          <p className="truncate text-sm font-semibold text-white">
+            {file.originalName}
+          </p>
+          <p className="mt-1 text-xs text-zinc-400">
+            {drag.format || drag.detectedFormat || file.format || file.detectedFormat || "sin formato"}
+          </p>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -223,16 +370,23 @@ function FamilyDropCard({ family, onOpen, onImageClick }) {
           </div>
         </div>
 
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={onOpen}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault()
+              onOpen()
+            }
+          }}
           className="mt-4 block w-full text-left"
         >
           <FamilyStackPreview
             family={family}
             onImageClick={onImageClick}
           />
-        </button>
+        </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-zinc-500">
@@ -260,37 +414,13 @@ function FamilyStackPreview({ family, onImageClick }) {
   return (
     <div className="relative h-44 overflow-hidden rounded-[1.45rem] border border-white/10 bg-black/35">
       {previewFiles.map((file, index) => (
-        <div
+        <CompactFamilyFileDragCard
           key={file.originalName}
-          className={`
-            absolute top-4 bottom-4
-            w-[72%] overflow-hidden rounded-2xl
-            border border-white/10 bg-black
-            shadow-2xl shadow-black/30
-            transition duration-300
-            group-hover:-translate-y-1
-            ${index === 0 ? "left-4 z-30" : ""}
-            ${index === 1 ? "left-[18%] z-20 rotate-2 opacity-85" : ""}
-            ${index === 2 ? "left-[31%] z-10 rotate-3 opacity-70" : ""}
-          `}
-        >
-          {file.previewUrl ? (
-            <img
-              src={file.previewUrl}
-              alt={file.originalName}
-              onDoubleClick={(event) => {
-                event.stopPropagation()
-                onImageClick({
-                  src: file.previewUrl,
-                  name: file.originalName,
-                })
-              }}
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <div className="h-full w-full bg-zinc-800" />
-          )}
-        </div>
+          file={file}
+          familyId={family.familyId}
+          index={index}
+          onImageClick={onImageClick}
+        />
       ))}
 
       <div className="absolute inset-x-0 bottom-0 z-40 flex items-end justify-between gap-3 bg-gradient-to-t from-black/80 via-black/20 to-transparent p-4">
@@ -313,13 +443,16 @@ function FamilyStackPreview({ family, onImageClick }) {
   )
 }
 
-function FamilyFileCard({ file, familyId, onImageClick }) {
+function CompactFamilyFileDragCard({ file, familyId, index, onImageClick }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
-      id: `family-file-${familyId}-${file.originalName}`,
+      id: `compact-file-${familyId}-${file.originalName}`,
       data: {
         type: "family-file",
+        file,
         originalName: file.originalName,
+        format: file.format,
+        detectedFormat: file.detectedFormat,
         sourceFamilyId: familyId,
       },
     })
@@ -336,47 +469,41 @@ function FamilyFileCard({ file, familyId, onImageClick }) {
       style={style}
       {...listeners}
       {...attributes}
+      onClick={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => {
+        event.stopPropagation()
+        if (!file.previewUrl) return
+        onImageClick({
+          src: file.previewUrl,
+          name: file.originalName,
+        })
+      }}
       className={`
-        bg-black/30
-        border border-white/10
-        rounded-2xl overflow-hidden
+        absolute top-4 bottom-4
+        w-[72%] overflow-hidden rounded-2xl
+        border border-white/10 bg-black
+        shadow-2xl shadow-black/30
+        transition duration-300
         cursor-grab active:cursor-grabbing
-        transition
-        hover:border-white/20 hover:bg-white/[0.05]
-        ${isDragging ? "opacity-50" : ""}
+        touch-none
+        group-hover:-translate-y-1
+        ${isDragging ? "opacity-35" : ""}
+        ${index === 0 ? "left-4 z-30" : ""}
+        ${index === 1 ? "left-[18%] z-20 rotate-2 opacity-85" : ""}
+        ${index === 2 ? "left-[31%] z-10 rotate-3 opacity-70" : ""}
       `}
+      title={`Arrastrar ${file.originalName}`}
     >
       {file.previewUrl ? (
-        <button
-          type="button"
-          onDoubleClick={() =>
-            onImageClick({
-              src: file.previewUrl,
-              name: file.originalName,
-            })
-          }
-          className="block w-full"
-        >
-          <img
-            src={file.previewUrl}
-            alt={file.originalName}
-            className="h-32 w-full bg-black/80 object-contain"
-          />
-        </button>
+        <img
+          src={file.previewUrl}
+          alt={file.originalName}
+          draggable={false}
+          className="pointer-events-none h-full w-full object-contain"
+        />
       ) : (
-        <div className="h-32 w-full bg-zinc-800" />
+        <div className="h-full w-full bg-zinc-800" />
       )}
-
-      <div className="p-3">
-        <p className="text-sm text-zinc-300 break-all">
-          {file.originalName}
-        </p>
-
-        <p className="mt-2 text-xs text-zinc-500">
-          Formato: {file.format || "sin formato"}
-        </p>
-        <CompressionInfo item={file} />
-      </div>
     </div>
   )
 }
@@ -472,8 +599,10 @@ function ManualDraggableCard({ file, onImageClick, scope = "main" }) {
       id: `manual-${scope}-${file.manualId}`,
       data: {
         type: "manual",
+        file,
         manualId: file.manualId,
         format,
+        detectedFormat: file.detectedFormat,
       },
     })
 
@@ -499,6 +628,7 @@ function ManualDraggableCard({ file, onImageClick, scope = "main" }) {
         bg-black/35
         p-2.5
         cursor-grab active:cursor-grabbing
+        touch-none
         shadow-inner shadow-white/[0.03]
         transition
         hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/[0.06]
@@ -677,7 +807,10 @@ function FamilyDetailFileCard({
       id: `detail-file-${family.familyId}-${file.originalName}`,
       data: {
         type: "family-file",
+        file,
         originalName: file.originalName,
+        format: file.format,
+        detectedFormat: file.detectedFormat,
         sourceFamilyId: family.familyId,
       },
     })

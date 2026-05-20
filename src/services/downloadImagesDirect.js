@@ -1,3 +1,4 @@
+import JSZip from "jszip"
 import { saveAs } from "file-saver"
 
 export async function downloadImagesDirect(results) {
@@ -28,13 +29,9 @@ export async function downloadImagesDirect(results) {
     return { count: downloadableItems.length, mode: "folder" }
   }
 
-  downloadableItems.forEach((item, index) => {
-    window.setTimeout(() => {
-      saveAs(item.file, getSafeFileName(item, index))
-    }, index * 120)
-  })
+  await downloadFlatZip(downloadableItems)
 
-  return { count: downloadableItems.length, mode: "multi-download" }
+  return { count: downloadableItems.length, mode: "zip-fallback" }
 }
 
 function supportsDirectoryPicker() {
@@ -48,6 +45,30 @@ function getSafeFileName(item, index) {
   return sanitizeFileName(
     item.finalName || item.originalName || `imagen-${index + 1}.webp`
   )
+}
+
+async function downloadFlatZip(items) {
+  const zip = new JSZip()
+
+  items.forEach((item, index) => {
+    zip.file(getSafeFileName(item, index), item.file)
+  })
+
+  const content = await zip.generateAsync({
+    type: "blob",
+  })
+
+  saveAs(content, `nomenclaturas-directo-${getTodayFormatted()}.zip`)
+}
+
+function getTodayFormatted() {
+  const today = new Date()
+
+  const day = String(today.getDate()).padStart(2, "0")
+  const month = String(today.getMonth() + 1).padStart(2, "0")
+  const year = String(today.getFullYear()).slice(-2)
+
+  return `${day}${month}${year}`
 }
 
 function sanitizeFileName(value) {

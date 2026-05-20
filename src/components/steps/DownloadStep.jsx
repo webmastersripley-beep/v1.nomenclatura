@@ -53,7 +53,7 @@ const totalHeavyKb =
         toast.success(
           downloadResult.mode === "folder"
             ? `Proceso guardado y ${downloadResult.count} imagen(es) guardada(s) en carpeta`
-            : `Proceso guardado y ${downloadResult.count} imagen(es) descargada(s)`
+            : `Proceso guardado y ${downloadResult.count} imagen(es) descargada(s) en un ZIP directo`
         )
         return
       }
