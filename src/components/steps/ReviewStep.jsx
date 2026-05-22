@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import {
   DndContext,
   DragOverlay,
@@ -13,14 +13,22 @@ import {
 } from "@dnd-kit/core"
 import { toast } from "sonner"
 
+import ImageModal from "@/components/common/ImageModal"
+import { recordProcessEvent } from "@/services/processAuditService"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+
+const EMPTY_MANUAL_FILES = []
 
 export default function ReviewStep({ families, onBack, onNext }) {
-  const manualFiles = useNomenclaturaStore((state) => state.manualFiles) || []
+  const manualFiles = useNomenclaturaStore((state) => state.manualFiles) || EMPTY_MANUAL_FILES
   const moveManualToFamily = useNomenclaturaStore((state) => state.moveManualToFamily)
   const moveFileToFamily = useNomenclaturaStore((state) => state.moveFileToFamily)
   const moveFileToManual = useNomenclaturaStore((state) => state.moveFileToManual)
   const createEmptyFamily = useNomenclaturaStore((state) => state.createEmptyFamily)
+  const processAuditId = useNomenclaturaStore((state) => state.processAuditId)
+  const processAuditStatus = useNomenclaturaStore((state) => state.processAuditStatus)
+  const processAuditError = useNomenclaturaStore((state) => state.processAuditError)
 
   const [showManuals, setShowManuals] = useState(true)
   const [selectedImage, setSelectedImage] = useState(null)
@@ -42,13 +50,39 @@ export default function ReviewStep({ families, onBack, onNext }) {
 
   const activeFamily =
     families.find((family) => family.familyId === activeFamilyId) || null
+  const imageList = useMemo(
+    () => [
+      ...families.flatMap((family) => family.files),
+      ...manualFiles,
+    ]
+      .filter((file) => file.previewUrl)
+      .map((file) => ({
+        src: file.previewUrl,
+        name: file.originalName,
+      })),
+    [families, manualFiles]
+  )
 
   const collisionDetection = (args) => {
+    const activeData = args.active?.data?.current
+    const rectCollisions = rectIntersection(args)
+
+    if (activeFamilyId && activeData?.type === "manual") {
+      const detailDropId = `family-detail-${activeFamilyId}`
+      const detailCollision = rectCollisions.find(
+        (collision) => collision.id === detailDropId
+      )
+
+      if (detailCollision) {
+        return [detailCollision]
+      }
+    }
+
     const pointerCollisions = pointerWithin(args)
 
     return pointerCollisions.length > 0
       ? pointerCollisions
-      : rectIntersection(args)
+      : rectCollisions
   }
 
   const getAvailableFormat = (targetFamily, requestedFormat) => {
@@ -112,6 +146,14 @@ export default function ReviewStep({ families, onBack, onNext }) {
         overData.familyId,
         resolvedFormat
       )
+      recordReviewEvent(processAuditId, {
+        type: "manual_to_family",
+        originalName: activeData.file?.originalName,
+        targetFamilyId: overData.familyId,
+        payload: {
+          format: resolvedFormat,
+        },
+      })
     }
 
     if (activeData.type === "family-file" && overData.type === "family") {
@@ -137,6 +179,12 @@ export default function ReviewStep({ families, onBack, onNext }) {
         activeData.sourceFamilyId,
         overData.familyId
       )
+      recordReviewEvent(processAuditId, {
+        type: "file_to_family",
+        originalName: activeData.originalName,
+        sourceFamilyId: activeData.sourceFamilyId,
+        targetFamilyId: overData.familyId,
+      })
     }
 
     if (activeData.type === "family-file" && overData.type === "manual-zone") {
@@ -144,8 +192,26 @@ export default function ReviewStep({ families, onBack, onNext }) {
         activeData.originalName,
         activeData.sourceFamilyId
       )
+      recordReviewEvent(processAuditId, {
+        type: "file_to_manual",
+        originalName: activeData.originalName,
+        sourceFamilyId: activeData.sourceFamilyId,
+      })
     }
   }
+
+  useKeyboardShortcuts([
+    {
+      key: "m",
+      enabled: !selectedImage,
+      handler: () => setShowManuals((current) => !current),
+    },
+    {
+      key: "Escape",
+      enabled: !selectedImage && Boolean(activeFamilyId),
+      handler: () => setActiveFamilyId(null),
+    },
+  ])
 
   return (
     <>
@@ -157,24 +223,22 @@ export default function ReviewStep({ families, onBack, onNext }) {
         onDragEnd={handleDragEnd}
       >
         <section className="
-          relative overflow-hidden
-          rounded-[2.25rem]
-          border border-white/10
-          bg-black/35
-          p-3 sm:p-4
-          shadow-[0_30px_120px_rgba(0,0,0,0.45)]
-          backdrop-blur-2xl
+          fixed inset-0 z-[90]
+          overflow-hidden
+          bg-black/90
+          p-3 sm:p-6
+          backdrop-blur-xl
         ">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_0%,rgba(217,70,239,0.14),transparent_28%),radial-gradient(circle_at_100%_8%,rgba(34,211,238,0.12),transparent_26%),linear-gradient(145deg,rgba(255,255,255,0.08),rgba(255,255,255,0.015)_50%)]" />
           <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/45 to-transparent" />
 
           <div className={`
-            relative grid gap-4
+            relative mx-auto grid h-full min-h-0 max-w-[1500px] gap-4
             ${showManuals ? "lg:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"}
           `}>
-            <main className="min-w-0">
+            <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
               <div className="
-                mb-4 rounded-[1.8rem]
+                mb-4 shrink-0 rounded-[1.8rem]
                 border border-white/10
                 bg-white/[0.045]
                 p-5 sm:p-6
@@ -196,8 +260,15 @@ export default function ReviewStep({ families, onBack, onNext }) {
                   </div>
 
                   <div className="flex flex-wrap gap-3">
+                    <SupabaseStatusBadge
+                      status={processAuditStatus}
+                      error={processAuditError}
+                    />
+
                     <button
                       onClick={() => setShowManuals(!showManuals)}
+                      aria-keyshortcuts="M"
+                      title="Mostrar u ocultar manuales"
                       className="rounded-xl bg-zinc-800 px-4 py-2 font-medium transition hover:bg-zinc-700"
                     >
                       {showManuals ? "Ocultar manuales" : `Mostrar manuales (${manualFiles.length})`}
@@ -221,11 +292,10 @@ export default function ReviewStep({ families, onBack, onNext }) {
               </div>
 
               <div className="
-                grid grid-cols-1 gap-4
+                grid min-h-0 flex-1 auto-rows-max grid-cols-1 items-start gap-4
                 md:grid-cols-2
                 2xl:grid-cols-3
-                lg:max-h-[calc(100dvh-18rem)]
-                lg:overflow-y-auto lg:pr-1
+                overflow-y-auto overscroll-contain pr-1 pb-8
                 scrollbar-modern
               ">
                 {families.map((family) => (
@@ -243,6 +313,7 @@ export default function ReviewStep({ families, onBack, onNext }) {
               <ManualPanel
                 manualFiles={manualFiles}
                 createEmptyFamily={createEmptyFamily}
+                processAuditId={processAuditId}
                 onImageClick={setSelectedImage}
               />
             )}
@@ -256,11 +327,12 @@ export default function ReviewStep({ families, onBack, onNext }) {
             createEmptyFamily={createEmptyFamily}
             moveFileToFamily={moveFileToFamily}
             moveFileToManual={moveFileToManual}
+            processAuditId={processAuditId}
             onImageClick={setSelectedImage}
             onClose={() => setActiveFamilyId(null)}
           />
         )}
-        <DragOverlay dropAnimation={null}>
+        <DragOverlay dropAnimation={null} zIndex={160}>
           {activeDrag ? (
             <DragPreview drag={activeDrag} />
           ) : null}
@@ -270,11 +342,44 @@ export default function ReviewStep({ families, onBack, onNext }) {
       {selectedImage && (
         <ImageModal
           image={selectedImage}
+          images={imageList}
           onClose={() => setSelectedImage(null)}
+          onImageChange={setSelectedImage}
         />
       )}
     </>
   )
+}
+
+function SupabaseStatusBadge({ status, error }) {
+  const labelMap = {
+    syncing: "Sincronizando",
+    saved: "Guardado en Supabase",
+    error: "Error al guardar",
+    disabled: "Supabase no configurado",
+    idle: "Supabase pendiente",
+  }
+
+  return (
+    <span
+      title={error || labelMap[status] || "Supabase"}
+      className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold ${
+        status === "error"
+          ? "bg-red-500/15 text-red-200"
+          : status === "saved"
+            ? "bg-emerald-500/15 text-emerald-200"
+            : "bg-zinc-800 text-zinc-300"
+      }`}
+    >
+      {labelMap[status] || "Supabase"}
+    </span>
+  )
+}
+
+function recordReviewEvent(processAuditId, event) {
+  recordProcessEvent(processAuditId, event).catch((error) => {
+    console.error(error)
+  })
 }
 
 function DragPreview({ drag }) {
@@ -330,7 +435,7 @@ function FamilyDropCard({ family, onOpen, onImageClick }) {
     <article
       ref={setNodeRef}
       className={`
-        group relative overflow-hidden
+        group relative min-h-[330px] overflow-hidden
         rounded-[1.75rem]
         border p-4 transition
         bg-white/[0.04]
@@ -341,7 +446,7 @@ function FamilyDropCard({ family, onOpen, onImageClick }) {
     >
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.06] via-transparent to-cyan-500/[0.04] opacity-70" />
 
-      <div className="relative">
+      <div className="relative flex h-full flex-col">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h3 className="truncate text-xl font-bold">
@@ -356,6 +461,11 @@ function FamilyDropCard({ family, onOpen, onImageClick }) {
             <p className="mt-1 text-sm text-zinc-500">
               {family.files.length} pieza(s)
             </p>
+
+            <ClassificationBadges
+              item={family.files[0]}
+              compact
+            />
           </div>
 
           <div className="flex shrink-0 gap-1.5">
@@ -412,7 +522,7 @@ function FamilyStackPreview({ family, onImageClick }) {
   const hiddenCount = Math.max(family.files.length - previewFiles.length, 0)
 
   return (
-    <div className="relative h-44 overflow-hidden rounded-[1.45rem] border border-white/10 bg-black/35">
+    <div className="relative h-[180px] overflow-hidden rounded-[1.45rem] border border-white/10 bg-black/35 sm:h-[190px]">
       {previewFiles.map((file, index) => (
         <CompactFamilyFileDragCard
           key={file.originalName}
@@ -444,7 +554,7 @@ function FamilyStackPreview({ family, onImageClick }) {
 }
 
 function CompactFamilyFileDragCard({ file, familyId, index, onImageClick }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
+  const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `compact-file-${familyId}-${file.originalName}`,
       data: {
@@ -457,16 +567,9 @@ function CompactFamilyFileDragCard({ file, familyId, index, onImageClick }) {
       },
     })
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-      }
-    : undefined
-
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...listeners}
       {...attributes}
       onClick={(event) => event.stopPropagation()}
@@ -508,7 +611,13 @@ function CompactFamilyFileDragCard({ file, familyId, index, onImageClick }) {
   )
 }
 
-function ManualPanel({ manualFiles, createEmptyFamily, onImageClick, scope = "main" }) {
+function ManualPanel({
+  manualFiles,
+  createEmptyFamily,
+  processAuditId,
+  onImageClick,
+  scope = "main",
+}) {
   const { setNodeRef, isOver } = useDroppable({
     id: `manual-drop-zone-${scope}`,
     data: {
@@ -520,14 +629,14 @@ function ManualPanel({ manualFiles, createEmptyFamily, onImageClick, scope = "ma
     <aside
       ref={setNodeRef}
       className={`
-        relative overflow-hidden
+        relative
+        h-full min-h-0 overflow-hidden
         rounded-[1.8rem]
         border
         bg-white/[0.045]
         shadow-2xl shadow-black/20
         backdrop-blur-xl
         transition-all duration-300
-        lg:max-h-[calc(100dvh-18rem)]
         ${isOver
           ? "border-white/60 bg-white/[0.14] ring-2 ring-white/25"
           : "border-white/10"
@@ -536,7 +645,7 @@ function ManualPanel({ manualFiles, createEmptyFamily, onImageClick, scope = "ma
     >
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_0%,rgba(217,70,239,0.18),transparent_32%),radial-gradient(circle_at_100%_100%,rgba(34,211,238,0.1),transparent_32%)]" />
 
-      <div className="relative flex h-full flex-col p-3">
+      <div className="relative flex h-full min-h-0 flex-col p-3">
         <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.045] px-4 py-3">
           <div className="flex items-center gap-2">
             <p className="text-sm font-bold text-white">
@@ -565,6 +674,7 @@ function ManualPanel({ manualFiles, createEmptyFamily, onImageClick, scope = "ma
                   key={file.manualId}
                   file={file}
                   onImageClick={onImageClick}
+                  scope={scope}
                 />
               ))}
             </div>
@@ -572,7 +682,15 @@ function ManualPanel({ manualFiles, createEmptyFamily, onImageClick, scope = "ma
         </div>
 
         <button
-          onClick={createEmptyFamily}
+          onClick={() => {
+            createEmptyFamily()
+            recordReviewEvent(processAuditId, {
+              type: "create_family",
+              payload: {
+                source: scope,
+              },
+            })
+          }}
           className="
             mt-3 w-full
             rounded-[1.35rem]
@@ -594,7 +712,7 @@ function ManualPanel({ manualFiles, createEmptyFamily, onImageClick, scope = "ma
 function ManualDraggableCard({ file, onImageClick, scope = "main" }) {
   const [format, setFormat] = useState(file.format || file.detectedFormat || "")
 
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
+  const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `manual-${scope}-${file.manualId}`,
       data: {
@@ -606,16 +724,9 @@ function ManualDraggableCard({ file, onImageClick, scope = "main" }) {
       },
     })
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-      }
-    : undefined
-
   return (
     <div
       ref={setNodeRef}
-      style={style}
       {...listeners}
       {...attributes}
       className={`
@@ -638,12 +749,14 @@ function ManualDraggableCard({ file, onImageClick, scope = "main" }) {
       {file.previewUrl ? (
         <button
           type="button"
-          onDoubleClick={() =>
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => {
+            event.stopPropagation()
             onImageClick({
               src: file.previewUrl,
               name: file.originalName,
             })
-          }
+          }}
           className="block h-full min-h-[72px] w-full overflow-hidden rounded-2xl border border-white/5 bg-black"
         >
           <img
@@ -674,6 +787,9 @@ function ManualDraggableCard({ file, onImageClick, scope = "main" }) {
             </span>
           ) : null}
         </div>
+
+        <ClassificationBadges item={file} compact />
+        <ClassificationReason item={file} />
 
         <label
           className="mt-2 block"
@@ -707,6 +823,7 @@ function FamilyDetailOverlay({
   createEmptyFamily,
   moveFileToFamily,
   moveFileToManual,
+  processAuditId,
   onImageClick,
   onClose,
 }) {
@@ -720,19 +837,19 @@ function FamilyDetailOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-3 sm:p-6 backdrop-blur-xl"
+      className="fixed inset-0 z-[130] flex items-center justify-center bg-black/80 p-3 sm:p-6 backdrop-blur-xl"
       onMouseDown={onClose}
     >
       <div
-        className="relative grid max-h-[92dvh] w-full max-w-7xl overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/92 shadow-[0_40px_160px_rgba(0,0,0,0.65)] lg:grid-cols-[minmax(0,1fr)_320px]"
+        className="relative grid h-full max-h-[92dvh] w-full max-w-[1500px] overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-950/92 shadow-[0_40px_160px_rgba(0,0,0,0.65)] lg:grid-cols-[minmax(0,1fr)_320px]"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_0%_0%,rgba(217,70,239,0.16),transparent_30%),radial-gradient(circle_at_100%_100%,rgba(34,211,238,0.1),transparent_30%)]" />
 
         <section
           ref={setNodeRef}
-          className={`relative min-w-0 overflow-y-auto p-4 sm:p-6 scrollbar-modern ${
-            isOver ? "bg-white/[0.04]" : ""
+          className={`relative min-w-0 overflow-y-auto p-4 transition sm:p-6 scrollbar-modern ${
+            isOver ? "bg-white/[0.06] ring-2 ring-inset ring-white/25" : ""
           }`}
         >
           <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -764,6 +881,16 @@ function FamilyDetailOverlay({
             </button>
           </div>
 
+          <div
+            className={`mb-5 rounded-[1.4rem] border border-dashed px-4 py-3 text-sm transition ${
+              isOver
+                ? "border-white/60 bg-white/10 text-white"
+                : "border-white/10 bg-white/[0.03] text-zinc-500"
+            }`}
+          >
+            Suelta aqui para agregar manuales a esta familia.
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {family.files.map((file) => (
               <FamilyDetailFileCard
@@ -780,10 +907,11 @@ function FamilyDetailOverlay({
           </div>
         </section>
 
-        <aside className="relative hidden border-l border-white/10 bg-white/[0.035] p-3 lg:block">
+        <aside className="relative hidden min-h-0 border-l border-white/10 bg-white/[0.035] p-3 lg:block">
           <ManualPanel
             manualFiles={manualFiles}
             createEmptyFamily={createEmptyFamily}
+            processAuditId={processAuditId}
             onImageClick={onImageClick}
             scope="detail"
           />
@@ -802,7 +930,7 @@ function FamilyDetailFileCard({
   onImageClick,
   onClose,
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
+  const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `detail-file-${family.familyId}-${file.originalName}`,
       data: {
@@ -815,12 +943,6 @@ function FamilyDetailFileCard({
       },
     })
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-      }
-    : undefined
-
   const otherFamilies = families.filter(
     (item) => item.familyId !== family.familyId
   )
@@ -828,7 +950,6 @@ function FamilyDetailFileCard({
   return (
     <article
       ref={setNodeRef}
-      style={style}
       className={`overflow-hidden rounded-[1.45rem] border border-white/10 bg-black/35 transition hover:border-white/20 ${
         isDragging ? "opacity-50" : ""
       }`}
@@ -841,12 +962,14 @@ function FamilyDetailFileCard({
         {file.previewUrl ? (
           <button
             type="button"
-            onDoubleClick={() =>
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => {
+              event.stopPropagation()
               onImageClick({
                 src: file.previewUrl,
                 name: file.originalName,
               })
-            }
+            }}
             className="block w-full"
           >
             <img
@@ -868,6 +991,8 @@ function FamilyDetailFileCard({
           <p className="mt-1 text-xs text-zinc-500">
             Formato: {file.format || "sin formato"}
           </p>
+          <ClassificationBadges item={file} />
+          <ClassificationReason item={file} />
           <CompressionInfo item={file} />
         </div>
 
@@ -912,39 +1037,70 @@ function FamilyDetailFileCard({
   )
 }
 
-function ImageModal({ image, onClose }) {
+function ClassificationBadges({ item, compact = false }) {
+  if (!item?.finalFamily && !item?.familyStatus) return null
+
+  const badges = [
+    item.finalFamily,
+    item.detectedVersion,
+    item.familyStatus,
+    item.familyConfidence,
+  ].filter(Boolean)
+
+  if (badges.length === 0) return null
+
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      <div
-        className="max-w-5xl w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4"
-        onClick={(event) =>
-          event.stopPropagation()
-        }
-      >
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <p className="text-sm text-zinc-300 break-all">
-            {image.name}
-          </p>
-
-          <button
-            onClick={onClose}
-            className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 transition text-sm"
-          >
-            Cerrar
-          </button>
-        </div>
-
-        <img
-          src={image.src}
-          alt={image.name}
-          className="w-full max-h-[75vh] object-contain bg-black rounded-xl"
-        />
-      </div>
+    <div className={`mt-2 flex flex-wrap gap-1.5 ${compact ? "max-h-12 overflow-hidden" : ""}`}>
+      {badges.map((badge) => (
+        <span
+          key={badge}
+          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${getClassificationBadgeClass(badge)}`}
+        >
+          {badge}
+        </span>
+      ))}
     </div>
   )
+}
+
+function ClassificationReason({ item }) {
+  const reasons = Array.isArray(item?.familyReasons)
+    ? item.familyReasons
+    : []
+  const allReasons = [
+    ...reasons,
+  ]
+
+  if (allReasons.length === 0) return null
+
+  return (
+    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-zinc-500">
+      {allReasons[allReasons.length - 1]}
+    </p>
+  )
+}
+
+function getClassificationBadgeClass(value) {
+  if (
+    value === "INCONSISTENCIA_NOMBRE_TAMANO" ||
+    value === "ERROR_READING_IMAGE"
+  ) {
+    return "bg-red-500/15 text-red-200"
+  }
+
+  if (value === "REVISION_MANUAL") {
+    return "bg-yellow-500/15 text-yellow-200"
+  }
+
+  if (value === "OK" || value === "ALTA") {
+    return "bg-emerald-500/15 text-emerald-200"
+  }
+
+  if (value === "PREDICCION_POR_TAMANO" || value === "MEDIA") {
+    return "bg-cyan-500/15 text-cyan-200"
+  }
+
+  return "bg-white/10 text-zinc-300"
 }
 
 function CompressionInfo({ item }) {

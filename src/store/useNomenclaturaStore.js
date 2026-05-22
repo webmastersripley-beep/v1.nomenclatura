@@ -4,6 +4,12 @@ import {
   sanitizeTags
 } from "@/utils/sanitizeValue"
 import { buildFinalName } from "@/utils/buildFinalName"
+import {
+  getFolderForPiece,
+  isPlaceholderPiece,
+  normalizeCyberComponent,
+} from "@/utils/cyberNomenclatureRules"
+import { resolveDuplicateFinalNames } from "@/utils/resolveDuplicateFinalNames"
 
 export const useNomenclaturaStore = create((set) => ({
   currentStep: "upload",
@@ -12,6 +18,10 @@ export const useNomenclaturaStore = create((set) => ({
   manualFiles: [],
   results: [],
   isProcessing: false,
+  processingProgress: null,
+  processAuditId: null,
+  processAuditStatus: "idle",
+  processAuditError: "",
   
 
   defaultConfig: {
@@ -27,8 +37,12 @@ export const useNomenclaturaStore = create((set) => ({
   setCurrentStep: (step) => set({ currentStep: step }),
   setFamilies: (families) => set({ families }),
   setManualFiles: (manualFiles) => set({ manualFiles }),
-  setResults: (results) => set({ results }),
+  setResults: (results) => set({ results: resolveDuplicateFinalNames(results) }),
   setIsProcessing: (value) => set({ isProcessing: value }),
+  setProcessingProgress: (progress) => set({ processingProgress: progress }),
+  setProcessAuditId: (processAuditId) => set({ processAuditId }),
+  setProcessAuditStatus: (processAuditStatus) => set({ processAuditStatus }),
+  setProcessAuditError: (processAuditError) => set({ processAuditError }),
   setActiveCampaigns:
   (campaigns) =>
     set({
@@ -61,6 +75,9 @@ setDefaultConfig:
         basePiece: `grupo-${groupNumber}`,
         groupNumber,
         piece: `grupo-${groupNumber}`,
+        folderGroup: "manuales",
+        isManualCreated: true,
+        isPlaceholder: true,
         files: [],
       }
 
@@ -109,20 +126,27 @@ setDefaultConfig:
 
       if (formatExists) return state
 
+      const targetIdentity = resolveTargetFamilyIdentity(
+        targetFamily,
+        manualFile
+      )
+
       const updatedFamilies = state.families.map((family) => {
         if (family.familyId !== targetFamilyId) return family
 
         return {
           ...family,
+          ...targetIdentity.familyPatch,
           files: [
             ...family.files,
             {
               ...manualFile,
-              piece: family.piece,
+              piece: targetIdentity.piece,
               format: cleanFormat,
               detectedFormat: cleanFormat,
               familyId: family.familyId,
-              familyKey: family.familyKey,
+              familyKey: targetIdentity.familyPatch.familyKey || family.familyKey,
+              folderGroup: targetIdentity.folderGroup,
             },
           ],
         }
@@ -167,6 +191,11 @@ setDefaultConfig:
 
       if (formatExists) return state
 
+      const targetIdentity = resolveTargetFamilyIdentity(
+        targetFamily,
+        movingFile
+      )
+
       const updatedFamilies = state.families
         .map((family) => {
           if (family.familyId === sourceFamilyId) {
@@ -181,13 +210,15 @@ setDefaultConfig:
           if (family.familyId === targetFamilyId) {
             return {
               ...family,
+              ...targetIdentity.familyPatch,
               files: [
                 ...family.files,
                 {
                   ...movingFile,
-                  piece: family.piece,
+                  piece: targetIdentity.piece,
                   familyId: family.familyId,
-                  familyKey: family.familyKey,
+                  familyKey: targetIdentity.familyPatch.familyKey || family.familyKey,
+                  folderGroup: targetIdentity.folderGroup,
                 },
               ],
             }
@@ -276,6 +307,9 @@ setDefaultConfig:
           buildFinalName(
             {
               ...updatedItem,
+              category:
+                updatedItem.category ||
+                "manual",
               date:
                 updatedItem.date ||
                 state.defaultConfig.date,
@@ -289,13 +323,13 @@ setDefaultConfig:
       })
 
       return {
-        results: updatedResults,
+        results: resolveDuplicateFinalNames(updatedResults),
       }
     }),
 
   recomputeFinalNames: (descriptorMode = "category") =>
     set((state) => ({
-      results: state.results.map((item) => ({
+      results: resolveDuplicateFinalNames(state.results.map((item) => ({
         ...item,
         descriptorMode,
         finalName: buildFinalName(
@@ -307,17 +341,21 @@ setDefaultConfig:
           },
           descriptorMode
         ),
-      })),
+      }))),
     })),
 
   resetProject: () =>
     set({
-      currentStep: "upload",
-      families: [],
-      manualFiles: [],
-      results: [],
-      isProcessing: false,
-    }),
+    currentStep: "upload",
+    families: [],
+    manualFiles: [],
+    results: [],
+    isProcessing: false,
+    processingProgress: null,
+    processAuditId: null,
+    processAuditStatus: "idle",
+    processAuditError: "",
+  }),
 }))
 
 function getTodayFormatted() {
@@ -328,4 +366,51 @@ function getTodayFormatted() {
   const year = String(today.getFullYear()).slice(-2)
 
   return `${day}${month}${year}`
+}
+
+function resolveTargetFamilyIdentity(family, file) {
+  const existingPiece = family.piece || family.basePiece || ""
+  const shouldAdoptFilePiece =
+    family.files.length === 0 &&
+    (family.isPlaceholder || isPlaceholderPiece(existingPiece))
+  const component =
+    normalizeCyberComponent(
+      shouldAdoptFilePiece
+        ? file.piece || file.originalName
+        : existingPiece
+    ) ||
+    normalizeCyberComponent(file.piece || file.originalName)
+  const piece =
+    shouldAdoptFilePiece
+      ? component?.piece || file.piece || existingPiece
+      : existingPiece
+  const basePiece =
+    component?.basePiece ||
+    (shouldAdoptFilePiece ? piece : family.basePiece || piece)
+  const folderGroup =
+    component?.folderGroup ||
+    family.folderGroup ||
+    getFolderForPiece(piece, file.finalFamily)
+
+  if (!shouldAdoptFilePiece) {
+    return {
+      piece,
+      folderGroup,
+      familyPatch: {
+        folderGroup,
+      },
+    }
+  }
+
+  return {
+    piece,
+    folderGroup,
+    familyPatch: {
+      familyKey: `${basePiece}-grupo-${family.groupNumber || 1}`,
+      basePiece,
+      piece,
+      folderGroup,
+      isPlaceholder: false,
+    },
+  }
 }

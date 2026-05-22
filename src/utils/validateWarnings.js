@@ -1,6 +1,14 @@
+const BRAND_DESCRIPTOR_MODES = new Set([
+  "brand",
+  "brand-category",
+  "category-brand",
+])
+
 export function validateWarnings(results) {
   const warnings = []
   const families = {}
+  const heavyFiles = []
+  const largeDimensionFiles = []
 
   results.forEach((item) => {
     const familyKey = item.familyId || item.piece || "sin-familia"
@@ -18,67 +26,124 @@ export function validateWarnings(results) {
       })
     }
 
-    if (!item.brand) {
+    if (shouldWarnEmptyBrand(item)) {
       warnings.push({
         id: `${item.id}-empty-brand`,
-        message: `${item.finalName}: marca IA vacía`,
+        message: `${item.finalName}: marca IA vacia`,
       })
     }
 
-    if (!Array.isArray(item.tags) || item.tags.length === 0) {
-      warnings.push({
-        id: `${item.id}-empty-tags`,
-        message: `${item.finalName}: sin tags IA`,
-      })
-    }
-
-    if (
-      !item.category ||
-      item.category === "manual" ||
-      item.category === "general"
-    ) {
+    if (isGenericCategory(item.category)) {
       warnings.push({
         id: `${item.id}-generic-category`,
-        message: `${item.finalName}: categoría genérica o sin definir`,
+        message: `${item.finalName}: categoria generica o sin definir`,
       })
     }
+
     const fileSizeKb = item.file?.size
-        ? Math.round(item.file.size / 1024)
-        : 0
+      ? Math.round(item.file.size / 1024)
+      : 0
 
-        if (fileSizeKb >= 200) {
-        warnings.push({
-            id: `${item.id}-heavy-file`,
-            message: `${item.originalName}: pesa ${fileSizeKb} KB. Se recomienda compactar antes de publicar.`,
+    if (fileSizeKb >= 200) {
+      heavyFiles.push({
+        name: item.originalName,
+        sizeKb: fileSizeKb,
+      })
+    }
+
+    if (item.width && item.height) {
+      const totalPixels = item.width * item.height
+
+      if (totalPixels > 4000000) {
+        largeDimensionFiles.push({
+          name: item.originalName,
+          width: item.width,
+          height: item.height,
         })
-        }
+      }
+    }
+  })
 
-        if (item.width && item.height) {
-  const totalPixels = item.width * item.height
+  addAggregatedFileWarning(warnings, {
+    id: "heavy-files",
+    items: heavyFiles,
+    buildMessage: (items) =>
+      `${items.length} imagen(es) pesan mas de 200 KB. Puedes compactarlas antes de publicar. Ej: ${formatExamples(
+        items.map((item) => `${item.name} ${item.sizeKb} KB`)
+      )}`,
+  })
 
-  if (totalPixels > 4000000) {
-    warnings.push({
-      id: `${item.id}-large-dimensions`,
-      message: `${item.originalName}: resolución alta (${item.width}x${item.height}). Puede convenir optimizarla.`,
-    })
-  }
-}
+  addAggregatedFileWarning(warnings, {
+    id: "large-dimensions",
+    items: largeDimensionFiles,
+    buildMessage: (items) =>
+      `${items.length} imagen(es) tienen resolucion alta. Puede convenir optimizarlas. Ej: ${formatExamples(
+        items.map((item) => `${item.name} ${item.width}x${item.height}`)
+      )}`,
   })
 
   Object.entries(families).forEach(([familyKey, items]) => {
-    const formats = items.map((item) => item.format)
-    const expectedFormats = ["desk", "mb", "app"]
+    const formats = items
+      .map((item) => item.format)
+      .filter(Boolean)
+    const expectedFormats = getExpectedFormats(items)
     const missingFormats = expectedFormats.filter(
-      (format) => !formats.includes(format) 
+      (format) => !formats.includes(format)
     )
 
     if (missingFormats.length > 0) {
       warnings.push({
         id: `${familyKey}-missing-formats`,
-        message: `Familia ${familyKey}: faltan formatos ${missingFormats.join(", ")}`,
+        message: `Familia ${getFamilyLabel(items, familyKey)}: faltan formatos ${missingFormats.join(", ")}`,
       })
     }
   })
 
   return warnings
+}
+
+function shouldWarnEmptyBrand(item) {
+  const descriptorMode = item.descriptorMode || "category"
+
+  return BRAND_DESCRIPTOR_MODES.has(descriptorMode) && !item.brand
+}
+
+function isGenericCategory(category) {
+  return (
+    !category ||
+    category === "manual" ||
+    category === "general"
+  )
+}
+
+function getExpectedFormats(items) {
+  const formats = new Set(
+    items
+      .map((item) => item.format)
+      .filter(Boolean)
+  )
+  const hasDesktopOrMobile =
+    formats.has("desk") ||
+    formats.has("mb")
+
+  if (!hasDesktopOrMobile) return []
+
+  return ["desk", "mb"]
+}
+
+function getFamilyLabel(items, fallback) {
+  return items[0]?.piece || fallback
+}
+
+function addAggregatedFileWarning(warnings, { id, items, buildMessage }) {
+  if (items.length === 0) return
+
+  warnings.push({
+    id,
+    message: buildMessage(items),
+  })
+}
+
+function formatExamples(examples) {
+  return examples.slice(0, 3).join("; ")
 }

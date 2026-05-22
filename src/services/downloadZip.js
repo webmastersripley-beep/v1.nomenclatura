@@ -10,7 +10,6 @@ import {
 export async function downloadZip(
   results
 ) {
-
   const preferences =
     useUserStore.getState()
       .preferences
@@ -19,6 +18,27 @@ export async function downloadZip(
     preferences.download_mode
     || "por-familia"
 
+  const content =
+    await buildDownloadZipBlob(
+      results,
+      downloadMode
+    )
+
+  saveAs(
+    content,
+    `nomenclaturas-${getTodayFormatted()}.zip`
+  )
+
+  return {
+    blob: content,
+    mode: downloadMode,
+  }
+}
+
+export async function buildDownloadZipBlob(
+  results,
+  downloadMode = "por-familia"
+) {
   const zip = new JSZip()
 
   buildZipManifest(
@@ -33,13 +53,7 @@ export async function downloadZip(
       type: "blob",
     })
 
-  const date =
-    getTodayFormatted()
-
-  saveAs(
-    content,
-    `nomenclaturas-${date}.zip`
-  )
+  return content
 }
 
 function getTodayFormatted() {

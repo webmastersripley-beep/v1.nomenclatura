@@ -1,3 +1,6 @@
+import { FAMILY_REVIEW_MANUAL } from "./imageFamilyRules.js"
+import { normalizeCyberComponent } from "./cyberNomenclatureRules.js"
+
 export function groupFamilies(files) {
 
   const manualFiles = []
@@ -60,6 +63,24 @@ export function groupFamilies(files) {
   const validFiles = []
 
 normalizedFiles.forEach((file) => {
+  if (
+    file.finalFamily === FAMILY_REVIEW_MANUAL ||
+    file.familyStatus === "ERROR_READING_IMAGE" ||
+    file.familyStatus === "INCONSISTENCIA_NOMBRE_TAMANO"
+  ) {
+    manualFiles.push({
+
+      ...file,
+
+      manualId:
+        crypto.randomUUID(),
+
+      pendingReason:
+        file.familyStatus || "family_review_manual",
+    })
+
+    return
+  }
 
   /*
   ---------------------------------------------------
@@ -173,9 +194,21 @@ normalizedFiles.forEach((file) => {
     ---------------------------------------------------
     */
 
+    const component =
+      normalizeCyberComponent(file.piece || file.originalName) ||
+      normalizeCyberComponent(file.familyClassification?.defaultPiece || "")
+
     const basePiece =
+      component?.basePiece ||
       file.piece ||
+      file.familyClassification?.defaultPiece ||
       "grupo"
+
+    const displayPiece =
+      component?.piece ||
+      file.piece ||
+      file.familyClassification?.defaultPiece ||
+      basePiece
 
     /*
     ---------------------------------------------------
@@ -241,7 +274,10 @@ normalizedFiles.forEach((file) => {
           nextGroupNumber,
 
         piece:
-          basePiece,
+          displayPiece,
+
+        folderGroup:
+          component?.folderGroup || null,
 
         files: [],
       }
@@ -263,6 +299,12 @@ normalizedFiles.forEach((file) => {
 
       format:
         file.detectedFormat,
+
+      piece:
+        displayPiece,
+
+      folderGroup:
+        component?.folderGroup || null,
     })
   })
 

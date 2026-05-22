@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { getProcessHistory } from "@/services/historyService"
+import {
+  downloadProcessZip,
+  getProcessHistory,
+} from "@/services/historyService"
 import { useUserStore } from "@/store/useUserStore"
 
 export default function HistoryModal({ onClose }) {
@@ -9,6 +12,7 @@ export default function HistoryModal({ onClose }) {
   const [history, setHistory] = useState([])
   const [userFilter, setUserFilter] = useState("")
   const [campaignFilter, setCampaignFilter] = useState("")
+  const [batchFilter, setBatchFilter] = useState("")
   const [isLoading, setIsLoading] = useState(true)
 
   async function loadHistory(filters = {}) {
@@ -33,6 +37,7 @@ export default function HistoryModal({ onClose }) {
     loadHistory({
       userName: userFilter,
       campaign: campaignFilter,
+      batchName: batchFilter,
     })
   }
 
@@ -43,12 +48,14 @@ export default function HistoryModal({ onClose }) {
     loadHistory({
       userName: currentUserName,
       campaign: campaignFilter,
+      batchName: batchFilter,
     })
   }
 
   const handleReset = () => {
     setUserFilter("")
     setCampaignFilter("")
+    setBatchFilter("")
     setIsLoading(true)
     loadHistory()
   }
@@ -72,11 +79,17 @@ export default function HistoryModal({ onClose }) {
           </button>
         </div>
 
-        <div className="p-5 border-b border-zinc-800 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto_auto] gap-3">
+        <div className="p-5 border-b border-zinc-800 grid grid-cols-1 md:grid-cols-[1fr_1fr_1fr_auto_auto_auto] gap-3">
           <input
             value={userFilter}
             onChange={(event) => setUserFilter(event.target.value)}
             placeholder="Filtrar por usuario"
+            className={inputClass}
+          />
+          <input
+            value={batchFilter}
+            onChange={(event) => setBatchFilter(event.target.value)}
+            placeholder="Filtrar por tanda"
             className={inputClass}
           />
           <input
@@ -118,24 +131,55 @@ export default function HistoryModal({ onClose }) {
 
 function HistoryCard({ process }) {
   const [expanded, setExpanded] = useState(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+
+  const handleDownloadBatch = async () => {
+    try {
+      setIsDownloading(true)
+      await downloadProcessZip(process)
+      toast.success("Tanda descargada")
+    } catch (error) {
+      console.error(error)
+      toast.error(error.message || "Error descargando tanda")
+    } finally {
+      setIsDownloading(false)
+    }
+  }
 
   return (
     <article className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="font-bold text-lg">{formatDateTime(process.created_at)}</h3>
+          <h3 className="font-bold text-lg">
+            {process.batch_name || formatDateTime(process.created_at)}
+          </h3>
+          {process.batch_name && (
+            <p className="mt-1 text-xs text-zinc-600">
+              {formatDateTime(process.created_at)}
+            </p>
+          )}
           <p className="text-sm text-zinc-500 mt-1">
             {process.app_user_name || "anonimo"} · {process.campaign || "-"} · {process.country || "-"}
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="px-2 py-1 rounded-full bg-zinc-800 text-zinc-300">
             {process.total_files} archivos
           </span>
           <span className="px-2 py-1 rounded-full bg-zinc-800 text-zinc-300">
             {process.total_families} familias
           </span>
+          {process.zip_storage_path && (
+            <button
+              type="button"
+              onClick={handleDownloadBatch}
+              disabled={isDownloading}
+              className="rounded-full bg-white px-3 py-1 font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            >
+              {isDownloading ? "Descargando..." : "Descargar tanda"}
+            </button>
+          )}
         </div>
       </div>
 

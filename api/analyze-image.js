@@ -52,13 +52,21 @@ export default async function handler(req, res) {
               }
 
               category:
-              categoria general retail.
+              categoria retail corta y especifica.
+              Evita categorias demasiado generales si hay una pista mas clara.
+              Por ejemplo:
+              smartphone/celulares => telefonia
+              laptop/notebook/pc => computacion
+              playstation/xbox/nintendo => gaming
+              audifonos/parlantes => audio
+              televisor/smart tv => tv
+              Usa tecnologia solo si no existe una categoria mas precisa.
 
               brand:
               marca detectada.
 
               product:
-              nombre resumido producto.
+              nombre resumido producto, por ejemplo smartphone, notebook, tv, audifonos.
 
               campaign:
               tipo de campaña detectada.

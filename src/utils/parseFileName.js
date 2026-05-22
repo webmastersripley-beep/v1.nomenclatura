@@ -1,3 +1,5 @@
+import { normalizeCyberComponent } from "./cyberNomenclatureRules.js"
+
 export function parseFileName(fileName) {
   const lowerName = fileName.toLowerCase()
 
@@ -8,6 +10,12 @@ export function parseFileName(fileName) {
     .replace(/\.(webp|png|jpg|jpeg)$/i, "")
     .replaceAll("_", "-")
     .replace(/\s+/g, "-")
+
+  const cyberComponent = normalizeCyberComponent(cleanName)
+
+  if (cyberComponent?.piece) {
+    piece = cyberComponent.piece
+  }
 
   const patterns = [
     { regex: /(box)(\d+)/, transform: (m) => `bx${m[2]}` },
@@ -25,12 +33,14 @@ export function parseFileName(fileName) {
     { regex: /^(\d+)/, transform: (m) => m[1] },
   ]
 
-  for (const pattern of patterns) {
-    const match = cleanName.match(pattern.regex)
+  if (!piece) {
+    for (const pattern of patterns) {
+      const match = cleanName.match(pattern.regex)
 
-    if (match) {
-      piece = pattern.transform(match)
-      break
+      if (match) {
+        piece = pattern.transform(match)
+        break
+      }
     }
   }
 

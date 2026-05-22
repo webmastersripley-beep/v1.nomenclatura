@@ -9,11 +9,18 @@ import DownloadStep from "@/components/steps/DownloadStep"
 import ProcessingStep from "@/components/steps/ProcessingStep"
 import UserLogin from "@/components/auth/UserLogin"
 import CampaignSelectionModal from "@/components/campaigns/CampaignSelectionModal"
+import ShortcutHelpOverlay from "@/components/common/ShortcutHelpOverlay"
 
 import { fakeAiProcessor } from "@/services/fakeAiProcessor"
+import { processFamiliesWithAi } from "@/services/aiBatchProcessor"
 import { getActiveCampaigns } from "@/services/campaignService"
+import {
+  startProcessAudit,
+  syncReviewAudit,
+} from "@/services/processAuditService"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
 import { defaultPreferences, useUserStore } from "@/store/useUserStore"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 
 export default function HomePage() {
   const {
@@ -25,9 +32,15 @@ export default function HomePage() {
     setManualFiles,
     setResults,
     setIsProcessing,
+    setProcessingProgress,
     setDefaultConfig,
     setSelectedCampaign,
+    processAuditId,
+    setProcessAuditId,
+    setProcessAuditStatus,
+    setProcessAuditError,
   } = useNomenclaturaStore()
+  const manualFiles = useNomenclaturaStore((state) => state.manualFiles)
 
   const user = useUserStore((state) => state.user)
   const preferences =
@@ -45,6 +58,7 @@ export default function HomePage() {
 
   const [campaignOptions, setCampaignOptions] = useState([])
   const [showCampaignSelector, setShowCampaignSelector] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
 
   useEffect(() => {
     if (!user) {
@@ -65,26 +79,95 @@ export default function HomePage() {
     setSelectedCampaign,
   ])
 
-  const handleFilesReady = (groupedData) => {
+  useEffect(() => {
+    if (!processAuditId || currentStep !== "review") return
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        setProcessAuditStatus("syncing")
+        setProcessAuditError("")
+        await syncReviewAudit(processAuditId, {
+          families,
+          manualFiles,
+        })
+        setProcessAuditStatus("saved")
+      } catch (error) {
+        console.error(error)
+        setProcessAuditStatus("error")
+        setProcessAuditError(error.message || "Error sincronizando Supabase")
+      }
+    }, 500)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [
+    currentStep,
+    families,
+    manualFiles,
+    processAuditId,
+    setProcessAuditError,
+    setProcessAuditStatus,
+  ])
+
+  const handleFilesReady = async (groupedData) => {
     setFamilies(groupedData.families)
     setManualFiles(groupedData.manualFiles)
     setCurrentStep("review")
+
+    try {
+      setProcessAuditStatus("syncing")
+      setProcessAuditError("")
+      const process = await startProcessAudit(groupedData, {
+        config: defaultConfig,
+      })
+
+      if (process?.id) {
+        setProcessAuditId(process.id)
+        setProcessAuditStatus("saved")
+      } else {
+        setProcessAuditId(null)
+        setProcessAuditStatus("disabled")
+      }
+    } catch (error) {
+      console.error(error)
+      setProcessAuditStatus("error")
+      setProcessAuditError(error.message || "Error guardando en Supabase")
+    }
   }
 
   const processWithConfig = async (config) => {
     setCurrentStep("processing")
     setIsProcessing(true)
+    setProcessingProgress(null)
 
-    const processedResults =
-      await fakeAiProcessor(
-        families,
-        config
-      )
+    try {
+      const aiEnabled =
+        import.meta.env.VITE_ENABLE_AI_ANALYSIS === "true"
 
-    setResults(processedResults)
+      if (!aiEnabled) {
+        toast.info("Modo prueba: IA desactivada para no consumir cuota.")
+      }
 
-    setIsProcessing(false)
-    setCurrentStep("edit")
+      const processedResults =
+        await (aiEnabled ? processFamiliesWithAi : fakeAiProcessor)(
+          families,
+          config,
+          {
+            concurrency: 4,
+            onProgress: setProcessingProgress,
+          }
+        )
+
+      setResults(processedResults)
+
+      setCurrentStep("edit")
+    } catch (error) {
+      console.error(error)
+      toast.error("Error procesando con IA")
+      setCurrentStep("review")
+    } finally {
+      setIsProcessing(false)
+      setProcessingProgress(null)
+    }
   }
 
   const handleProcessFamilies = async () => {
@@ -184,6 +267,57 @@ export default function HomePage() {
 
     await processWithConfig(config)
   }
+
+  const goBack = () => {
+    if (currentStep === "review") {
+      setCurrentStep("upload")
+      return
+    }
+
+    if (currentStep === "edit") {
+      setCurrentStep("review")
+      return
+    }
+
+    if (currentStep === "download") {
+      setCurrentStep("edit")
+    }
+  }
+
+  const goNext = () => {
+    if (currentStep === "review") {
+      handleProcessFamilies()
+      return
+    }
+
+    if (currentStep === "edit") {
+      setCurrentStep("download")
+    }
+  }
+
+  useKeyboardShortcuts([
+    {
+      key: "?",
+      handler: () => setShowShortcuts((current) => !current),
+    },
+    {
+      key: "ArrowLeft",
+      altKey: true,
+      enabled: !showShortcuts && ["review", "edit", "download"].includes(currentStep),
+      handler: goBack,
+    },
+    {
+      key: "ArrowRight",
+      altKey: true,
+      enabled: !showShortcuts && ["review", "edit"].includes(currentStep),
+      handler: goNext,
+    },
+    {
+      key: "Escape",
+      enabled: showCampaignSelector,
+      handler: () => setShowCampaignSelector(false),
+    },
+  ])
 
   return (
 
@@ -394,10 +528,71 @@ export default function HomePage() {
           />
         )}
 
+        <ShortcutHelpOverlay
+          open={showShortcuts}
+          onClose={() => setShowShortcuts(false)}
+          sections={getShortcutSections(currentStep)}
+        />
+
       </section>
 
     </main>
   )
+}
+
+function getShortcutSections(currentStep) {
+  const sections = [
+    {
+      title: "Global",
+      items: [
+        { keys: "?", label: "Mostrar u ocultar atajos" },
+        { keys: "Esc", label: "Cerrar modal o panel activo" },
+        { keys: "Alt + ←", label: "Volver al paso anterior" },
+        { keys: "Alt + →", label: "Continuar al siguiente paso" },
+      ],
+    },
+    {
+      title: "Imagenes",
+      items: [
+        { keys: "← / →", label: "Cambiar imagen en visor" },
+        { keys: "+ / -", label: "Acercar o alejar" },
+        { keys: "0", label: "Reiniciar zoom" },
+      ],
+    },
+  ]
+
+  if (currentStep === "review") {
+    sections.push({
+      title: "Revision",
+      items: [
+        { keys: "M", label: "Mostrar u ocultar manuales" },
+        { keys: "Enter", label: "Abrir familia enfocada" },
+      ],
+    })
+  }
+
+  if (currentStep === "edit") {
+    sections.push({
+      title: "Edicion",
+      items: [
+        { keys: "A", label: "Analizar familia enfocada" },
+        { keys: "E", label: "Desglosar familia enfocada" },
+      ],
+    })
+  }
+
+  if (currentStep === "download") {
+    sections.push({
+      title: "Descarga",
+      items: [
+        { keys: "D", label: "Descarga principal" },
+        { keys: "J", label: "Descargar metadata JSON" },
+        { keys: "C", label: "Comprimir imagenes pesadas" },
+      ],
+    })
+  }
+
+  return sections
 }
 const themeBackgroundMap = {
   midnight:

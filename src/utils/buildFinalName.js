@@ -1,4 +1,4 @@
-import { sanitizeValue } from "@/utils/sanitizeValue"
+import { sanitizeValue } from "./sanitizeValue.js"
 
 export const DESCRIPTOR_MODES = [
   "category",

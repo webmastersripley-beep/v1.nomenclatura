@@ -1,57 +1,94 @@
-import { Upload } from "lucide-react"
+import { useRef, useState } from "react"
+import { FolderOpen, Upload } from "lucide-react"
 import { useDropzone } from "react-dropzone"
 
 import { parseFileName } from "@/utils/parseFileName"
 import { groupFamilies } from "@/utils/groupFamilies"
 import { getImageDimensions } from "@/utils/getImageDimensions"
-import { detectBySize } from "@/utils/detectBySize"
+import { classifyImageFamily } from "@/utils/classifyImageFamily"
 
 export default function ImageUploader({ onFilesReady }) {
-  const onDrop = async (acceptedFiles) => {
-    const parsedFiles = await Promise.all(
-      acceptedFiles.map(async (file) => {
-        const dimensions = await getImageDimensions(file)
+  const folderInputRef = useRef(null)
+  const [isPreparing, setIsPreparing] = useState(false)
 
-        const parsedName = parseFileName(file.name)
+  const prepareFiles = async (acceptedFiles) => {
+    setIsPreparing(true)
 
-        const sizeDetection = detectBySize(
-          dimensions.width,
-          dimensions.height
-        )
-
-        return {
-          ...parsedName,
-
-          file,
-
-          previewUrl: dimensions.previewUrl,
-
-          width: dimensions.width,
-          height: dimensions.height,
-
-          format:
-            parsedName.format ||
-            sizeDetection?.format ||
-            null,
-
-          detectedComponentBySize:
-            sizeDetection?.component || null,
-
-          detectedBySize:
-            Boolean(sizeDetection),
-        }
-      })
+    const imageFiles = acceptedFiles.filter((file) =>
+      file.type.startsWith("image/")
     )
 
-    const groupedData = groupFamilies(parsedFiles)
+    try {
+      const parsedFiles = await Promise.all(
+        imageFiles.map(async (file) => {
+          const dimensions = await getImageDimensions(file)
+          const parsedName = parseFileName(file.name)
+          const classification = classifyImageFamily({
+            fileName: file.name,
+            width: dimensions.width,
+            height: dimensions.height,
+          })
+          const inferredPiece =
+            !classification.nameFamily && classification.defaultPiece
+              ? classification.defaultPiece
+              : parsedName.piece || classification.defaultPiece || null
 
-    onFilesReady(groupedData)
+          return {
+            ...parsedName,
+            file,
+            previewUrl: dimensions.previewUrl,
+            width: dimensions.width,
+            height: dimensions.height,
+            ratio: classification.ratio,
+            dimension: classification.dimension,
+            nameFamily: classification.nameFamily,
+            sizeFamily: classification.sizeFamily,
+            finalFamily: classification.finalFamily,
+            familyConfidence: classification.confidence,
+            familyStatus: classification.status,
+            familyReasons: classification.reasons,
+            nameVersion: classification.nameVersion,
+            sizeVersion: classification.sizeVersion,
+            detectedVersion: classification.version,
+            familyClassification: classification,
+            piece: inferredPiece,
+            format:
+              parsedName.format ||
+              classification.format ||
+              null,
+            detectedComponentBySize:
+              classification.sizeFamily || null,
+            detectedBySize:
+              Boolean(classification.sizeFamily),
+          }
+        })
+      )
+
+      const groupedData = groupFamilies(parsedFiles)
+
+      onFilesReady(groupedData)
+    } finally {
+      setIsPreparing(false)
+    }
+  }
+
+  const onDrop = async (acceptedFiles) => {
+    await prepareFiles(acceptedFiles)
+  }
+
+  const handleFolderChange = async (event) => {
+    const files = Array.from(event.target.files || [])
+
+    if (files.length === 0) return
+
+    await prepareFiles(files)
+    event.target.value = ""
   }
 
   const {
     getRootProps,
     getInputProps,
-    isDragActive
+    isDragActive,
   } = useDropzone({
     accept: {
       "image/webp": [".webp"],
@@ -59,34 +96,59 @@ export default function ImageUploader({ onFilesReady }) {
       "image/jpeg": [".jpg", ".jpeg"],
     },
     onDrop,
+    disabled: isPreparing,
   })
 
   return (
-    <div
-      {...getRootProps()}
-      className={`
-        border-2 border-dashed rounded-3xl p-24 text-center cursor-pointer transition
-        ${isDragActive
-          ? "border-white bg-zinc-900"
-          : "border-zinc-700 hover:border-zinc-500"
-        }
-      `}
-    >
-      <input {...getInputProps()} />
+    <div className="space-y-4">
+      <div
+        {...getRootProps()}
+        className={`
+          cursor-pointer rounded-3xl border-2 border-dashed p-24 text-center transition
+          ${isPreparing
+            ? "cursor-wait border-zinc-800 bg-zinc-950"
+            : isDragActive
+            ? "border-white bg-zinc-900"
+            : "border-zinc-700 hover:border-zinc-500"
+          }
+        `}
+      >
+        <input {...getInputProps()} />
 
-      <div className="flex flex-col items-center gap-4">
-        <Upload size={52} className="text-zinc-400" />
+        <div className="flex flex-col items-center gap-4">
+          <Upload size={52} className="text-zinc-400" />
 
-        <div>
-          <p className="text-2xl font-semibold">
-            Arrastra imágenes aquí
-          </p>
+          <div>
+            <p className="text-2xl font-semibold">
+              Arrastra imagenes aqui
+            </p>
 
-          <p className="text-zinc-500 mt-2">
-            o haz click para seleccionar archivos
-          </p>
+            <p className="mt-2 text-zinc-500">
+              o haz click para seleccionar archivos
+            </p>
+          </div>
         </div>
       </div>
+
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        webkitdirectory=""
+        directory=""
+        onChange={handleFolderChange}
+        className="hidden"
+      />
+
+      <button
+        type="button"
+        onClick={() => folderInputRef.current?.click()}
+        disabled={isPreparing}
+        className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800"
+      >
+        <FolderOpen size={18} />
+        {isPreparing ? "Analizando..." : "Seleccionar carpeta"}
+      </button>
     </div>
   )
 }

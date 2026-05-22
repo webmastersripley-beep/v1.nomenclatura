@@ -1,24 +1,33 @@
 import { useState } from "react"
 import { toast } from "sonner"
 
-import { downloadZip } from "@/services/downloadZip"
+import {
+  buildDownloadZipBlob,
+  downloadZip,
+} from "@/services/downloadZip"
 import { downloadImagesDirect } from "@/services/downloadImagesDirect"
 import { downloadMetadata } from "@/services/downloadMetadata"
 import { saveProcess } from "@/services/saveProcess"
 import { compressHeavyImages } from "@/services/compressImages"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
 import { useUserStore } from "@/store/useUserStore"
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { validateResults } from "@/utils/validateResults"
 import { validateWarnings } from "@/utils/validateWarnings"
 
 export default function DownloadStep({ onBack }) {
   const results = useNomenclaturaStore((state) => state.results) || []
   const setResults = useNomenclaturaStore((state) => state.setResults)
+  const processAuditStatus = useNomenclaturaStore((state) => state.processAuditStatus)
+  const processAuditError = useNomenclaturaStore((state) => state.processAuditError)
+  const setProcessAuditStatus = useNomenclaturaStore((state) => state.setProcessAuditStatus)
+  const setProcessAuditError = useNomenclaturaStore((state) => state.setProcessAuditError)
   const downloadMode = useUserStore((state) => state.preferences.download_mode)
   const isDirectDownload = downloadMode === "directo"
 
   const [isSaving, setIsSaving] = useState(false)
   const [isCompressing, setIsCompressing] = useState(false)
+  const [pendingDownload, setPendingDownload] = useState(null)
 
   const errors = validateResults(results)
   const hasErrors = errors.length > 0
@@ -44,24 +53,36 @@ const totalHeavyKb =
 
     try {
       setIsSaving(true)
+      let zipBlob = null
+      let localMessage = ""
 
       if (isDirectDownload) {
         const downloadResult = await downloadImagesDirect(results)
-
-        await saveProcess(results)
-
-        toast.success(
+        zipBlob = await buildDownloadZipBlob(results, "directo")
+        localMessage =
           downloadResult.mode === "folder"
-            ? `Proceso guardado y ${downloadResult.count} imagen(es) guardada(s) en carpeta`
-            : `Proceso guardado y ${downloadResult.count} imagen(es) descargada(s) en un ZIP directo`
-        )
+            ? `${downloadResult.count} imagen(es) guardada(s) en carpeta`
+            : `${downloadResult.count} imagen(es) descargada(s) en ZIP directo`
+
+        setPendingDownload({
+          zipBlob,
+          downloadMode: "directo",
+          localMessage,
+        })
+        toast.info("Descarga lista. Ponle nombre a la tanda para guardarla en historial.")
         return
       }
 
-      await saveProcess(results)
-      await downloadZip(results)
+      const downloadResult = await downloadZip(results)
+      zipBlob = downloadResult.blob
+      localMessage = "ZIP descargado"
 
-      toast.success("Proceso guardado y ZIP descargado")
+      setPendingDownload({
+        zipBlob,
+        downloadMode: downloadResult.mode || downloadMode,
+        localMessage,
+      })
+      toast.info("ZIP descargado. Ponle nombre a la tanda para guardarla en historial.")
     } catch (error) {
       console.error(error)
 
@@ -70,7 +91,7 @@ const totalHeavyKb =
         return
       }
 
-      toast.error("Error guardando o descargando el proceso")
+      toast.error("Error descargando el proceso")
     } finally {
       setIsSaving(false)
     }
@@ -98,6 +119,34 @@ const totalHeavyKb =
     }
   }
 
+  useKeyboardShortcuts([
+    {
+      key: "d",
+      enabled: !pendingDownload && !hasErrors && !isSaving,
+      handler: handleDownload,
+    },
+    {
+      key: "j",
+      enabled: !pendingDownload,
+      handler: handleMetadataDownload,
+    },
+    {
+      key: "c",
+      enabled: !pendingDownload && !isCompressing && heavyFiles.length > 0,
+      handler: handleCompressImages,
+    },
+  ])
+
+  useKeyboardShortcuts([
+    {
+      key: "Escape",
+      enabled: Boolean(pendingDownload),
+      handler: () => setPendingDownload(null),
+    },
+  ], {
+    ignoreEditable: false,
+  })
+
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
       <h2 className="text-2xl font-bold">
@@ -121,6 +170,10 @@ const totalHeavyKb =
             ? `${errors.length} error(es) encontrados`
             : "Todo listo para descargar"}
         </p>
+        <SupabaseStatusBadge
+          status={processAuditStatus}
+          error={processAuditError}
+        />
         {heavyFiles.length > 0 && (
           <div className="mt-4 bg-yellow-950/20 border border-yellow-900 rounded-xl p-4">
             <p className="text-yellow-300 font-medium">
@@ -195,6 +248,8 @@ const totalHeavyKb =
         <button
           onClick={handleDownload}
           disabled={hasErrors || isSaving}
+          aria-keyshortcuts="D"
+          title="Descarga principal"
           className={`
             px-4 py-2 rounded-xl font-medium transition
             ${
@@ -213,6 +268,8 @@ const totalHeavyKb =
 
         <button
           onClick={handleMetadataDownload}
+          aria-keyshortcuts="J"
+          title="Descargar metadata JSON"
           className="
             px-4 py-2
             rounded-xl
@@ -229,6 +286,8 @@ const totalHeavyKb =
         <button
           onClick={handleCompressImages}
           disabled={isCompressing || heavyFiles.length === 0}
+          aria-keyshortcuts="C"
+          title="Comprimir imagenes pesadas"
           className={`
             px-4 py-2
             rounded-xl
@@ -247,6 +306,134 @@ const totalHeavyKb =
             ? "Comprimir imágenes pesadas"
             : "Sin imágenes pesadas"}
         </button>
+      </div>
+
+      {pendingDownload && (
+        <BatchNameModal
+          pendingDownload={pendingDownload}
+          results={results}
+          setProcessAuditStatus={setProcessAuditStatus}
+          setProcessAuditError={setProcessAuditError}
+          onClose={() => setPendingDownload(null)}
+          onSaved={() => setPendingDownload(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function SupabaseStatusBadge({ status, error }) {
+  const labelMap = {
+    syncing: "Sincronizando Supabase",
+    saved: "Guardado en Supabase",
+    error: "Error al guardar",
+    disabled: "Supabase no configurado",
+    idle: "Supabase pendiente",
+  }
+
+  return (
+    <p
+      title={error || labelMap[status] || "Supabase"}
+      className={`mt-2 text-sm font-semibold ${
+        status === "error"
+          ? "text-red-300"
+          : status === "saved"
+            ? "text-emerald-300"
+            : "text-zinc-400"
+      }`}
+    >
+      {labelMap[status] || "Supabase pendiente"}
+    </p>
+  )
+}
+
+function BatchNameModal({
+  pendingDownload,
+  results,
+  setProcessAuditStatus,
+  setProcessAuditError,
+  onClose,
+  onSaved,
+}) {
+  const [batchName, setBatchName] = useState("")
+  const [isRegistering, setIsRegistering] = useState(false)
+
+  const handleSave = async () => {
+    const cleanName = batchName.trim()
+
+    if (!cleanName) {
+      toast.error("Escribe un nombre para la tanda")
+      return
+    }
+
+    try {
+      setIsRegistering(true)
+      setProcessAuditStatus("syncing")
+      setProcessAuditError("")
+
+      await saveProcess(
+        results,
+        {
+          batchName: cleanName,
+          downloadMode: pendingDownload.downloadMode,
+          zipBlob: pendingDownload.zipBlob,
+        }
+      )
+
+      setProcessAuditStatus("saved")
+      toast.success("Tanda guardada en historial")
+      onSaved()
+    } catch (error) {
+      console.error(error)
+      setProcessAuditStatus("error")
+      setProcessAuditError(error.message || "Error guardando tanda")
+      toast.error(error.message || "Error guardando tanda")
+    } finally {
+      setIsRegistering(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/80 p-4 backdrop-blur-xl">
+      <div className="w-full max-w-md rounded-3xl border border-zinc-800 bg-zinc-950 p-6 shadow-2xl">
+        <h3 className="text-xl font-bold">
+          Nombrar tanda descargada
+        </h3>
+
+        <p className="mt-2 text-sm text-zinc-400">
+          {pendingDownload.localMessage}. Este nombre permitira que otros usuarios la encuentren en historial.
+        </p>
+
+        <label className="mt-5 block space-y-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+            Nombre
+          </span>
+          <input
+            value={batchName}
+            onChange={(event) => setBatchName(event.target.value)}
+            placeholder="DESCARGA1"
+            className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-500"
+          />
+        </label>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+          >
+            Guardar despues
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isRegistering}
+            className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          >
+            {isRegistering ? "Guardando..." : "Guardar tanda"}
+          </button>
+        </div>
       </div>
     </div>
   )

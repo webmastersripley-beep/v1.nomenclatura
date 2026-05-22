@@ -24,10 +24,24 @@ export async function analyzeImageWithGemini(file) {
     })
 
   if (!response.ok) {
+    let detail
 
-    throw new Error(
+    try {
+      detail = await response.json()
+    } catch {
+      detail = {}
+    }
+
+    const error = new Error(
+      detail?.detail ||
+      detail?.error ||
       "Error analizando imagen"
     )
+
+    error.status = response.status
+    error.detail = detail
+
+    throw error
   }
 
   return response.json()

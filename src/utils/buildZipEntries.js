@@ -1,3 +1,5 @@
+import { getFolderForPiece } from "./cyberNomenclatureRules.js"
+
 export function buildZipEntryPath(item, downloadMode = "por-familia") {
   const fileName = sanitizeZipSegment(item.finalName || "archivo.webp")
 
@@ -13,7 +15,12 @@ export function buildZipEntryPath(item, downloadMode = "por-familia") {
     return `${sanitizeZipSegment(item.format || "otros")}/${fileName}`
   }
 
-  return `${sanitizeZipSegment(item.piece || "manual")}/${fileName}`
+  const folderGroup =
+    item.folderGroup ||
+    item.zipFolder ||
+    getFolderForPiece(item.piece || "", item.finalFamily || "")
+
+  return `${sanitizeZipSegment(folderGroup || "manual")}/${fileName}`
 }
 
 export function buildZipManifest(results, downloadMode = "por-familia") {

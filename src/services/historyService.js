@@ -1,8 +1,10 @@
 import { supabase } from "@/lib/supabase"
+import { saveAs } from "file-saver"
 
 export async function getProcessHistory({
   userName = "",
   campaign = "",
+  batchName = "",
   limit = 50,
 } = {}) {
   let query = supabase
@@ -14,6 +16,11 @@ export async function getProcessHistory({
       total_families,
       country,
       campaign,
+      batch_name,
+      download_mode,
+      zip_storage_path,
+      zip_size,
+      saved_after_download_at,
       app_user_id,
       app_user_name
     `)
@@ -26,6 +33,10 @@ export async function getProcessHistory({
 
   if (campaign.trim()) {
     query = query.ilike("campaign", `%${campaign.trim()}%`)
+  }
+
+  if (batchName.trim()) {
+    query = query.ilike("batch_name", `%${batchName.trim()}%`)
   }
 
   const { data: processes, error: processError } = await query
@@ -75,4 +86,34 @@ export async function getProcessHistory({
     ...process,
     items: itemsByProcess[process.id] || [],
   }))
+}
+
+export async function downloadProcessZip(process) {
+  if (!process?.zip_storage_path) {
+    throw new Error("Esta tanda no tiene ZIP guardado")
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.storage
+    .from("process-downloads")
+    .download(process.zip_storage_path)
+
+  if (error) {
+    console.error(error)
+    throw new Error("Error descargando tanda")
+  }
+
+  saveAs(
+    data,
+    `${sanitizeFileName(process.batch_name || "tanda")}.zip`
+  )
+}
+
+function sanitizeFileName(value) {
+  return String(value || "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/-+/g, "-")
+    .trim()
 }
