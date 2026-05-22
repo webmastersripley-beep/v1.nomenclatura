@@ -1,5 +1,13 @@
 import { GoogleGenAI } from "@google/genai"
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "20mb",
+    },
+  },
+}
+
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 })
@@ -14,6 +22,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({
+        error: "GEMINI_API_KEY no configurada",
+      })
+    }
 
     const {
       imageBase64,
@@ -30,7 +43,7 @@ export default async function handler(req, res) {
     const response =
       await ai.models.generateContent({
 
-        model: "gemini-2.0-flash",
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash-lite",
 
         contents: [
 
