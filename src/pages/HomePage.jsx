@@ -586,7 +586,6 @@ function getShortcutSections(currentStep) {
       title: "Descarga",
       items: [
         { keys: "D", label: "Descarga principal" },
-        { keys: "J", label: "Descargar metadata JSON" },
         { keys: "C", label: "Comprimir imagenes pesadas" },
       ],
     })

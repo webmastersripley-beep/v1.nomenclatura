@@ -2,14 +2,14 @@ import { create } from "zustand"
 import {
   sanitizeValue,
   sanitizeTags
-} from "@/utils/sanitizeValue"
-import { buildFinalName } from "@/utils/buildFinalName"
+} from "../utils/sanitizeValue.js"
+import { buildFinalName } from "../utils/buildFinalName.js"
 import {
   getFolderForPiece,
   isPlaceholderPiece,
   normalizeCyberComponent,
-} from "@/utils/cyberNomenclatureRules"
-import { resolveDuplicateFinalNames } from "@/utils/resolveDuplicateFinalNames"
+} from "../utils/cyberNomenclatureRules.js"
+import { resolveDuplicateFinalNames } from "../utils/resolveDuplicateFinalNames.js"
 
 export const useNomenclaturaStore = create((set) => ({
   currentStep: "upload",
@@ -43,6 +43,87 @@ export const useNomenclaturaStore = create((set) => ({
   setProcessAuditId: (processAuditId) => set({ processAuditId }),
   setProcessAuditStatus: (processAuditStatus) => set({ processAuditStatus }),
   setProcessAuditError: (processAuditError) => set({ processAuditError }),
+  renameFamily: (familyId, nextPiece) =>
+    set((state) => {
+      const family = state.families.find((item) => item.familyId === familyId)
+      const identity = resolvePieceIdentity(nextPiece, family)
+
+      if (!family || !identity.piece || identity.piece === family.piece) {
+        return state
+      }
+
+      const familyPatch = {
+        familyKey: `${identity.basePiece}-grupo-${family.groupNumber || 1}`,
+        basePiece: identity.basePiece,
+        piece: identity.piece,
+        folderGroup: identity.folderGroup,
+        isPlaceholder: false,
+      }
+
+      return {
+        families: state.families.map((item) => {
+          if (item.familyId !== familyId) return item
+
+          return {
+            ...item,
+            ...familyPatch,
+            files: item.files.map((file) => ({
+              ...file,
+              piece: identity.piece,
+              familyKey: familyPatch.familyKey,
+              folderGroup: identity.folderGroup,
+            })),
+          }
+        }),
+        manualFiles: state.manualFiles.map((file) => {
+          if (file.familyId !== familyId) return file
+
+          return {
+            ...file,
+            piece: identity.piece,
+            familyKey: familyPatch.familyKey,
+            folderGroup: identity.folderGroup,
+          }
+        }),
+      }
+    }),
+  renameResultFamily: (familyId, nextPiece) =>
+    set((state) => {
+      const familyItems = state.results.filter((item) => item.familyId === familyId)
+      const firstItem = familyItems[0]
+      const identity = resolvePieceIdentity(nextPiece, firstItem)
+
+      if (!firstItem || !identity.piece || identity.piece === firstItem.piece) {
+        return state
+      }
+
+      const updatedResults = state.results.map((item) => {
+        if (item.familyId !== familyId) return item
+
+        const updatedItem = {
+          ...item,
+          piece: identity.piece,
+          folderGroup: identity.folderGroup,
+        }
+
+        updatedItem.finalName = buildFinalName(
+          {
+            ...updatedItem,
+            category: updatedItem.category || "manual",
+            date: updatedItem.date || state.defaultConfig.date,
+          },
+          updatedItem.descriptorMode ||
+            state.defaultConfig.descriptorMode ||
+            "category"
+        )
+
+        return updatedItem
+      })
+
+      return {
+        results: resolveDuplicateFinalNames(updatedResults),
+      }
+    }),
   setActiveCampaigns:
   (campaigns) =>
     set({
@@ -412,5 +493,31 @@ function resolveTargetFamilyIdentity(family, file) {
       folderGroup,
       isPlaceholder: false,
     },
+  }
+}
+
+function resolvePieceIdentity(piece, fallback = {}) {
+  const cleanPiece = sanitizeValue(piece)
+
+  if (!cleanPiece) {
+    return {
+      piece: "",
+      basePiece: "",
+      folderGroup: "",
+    }
+  }
+
+  const component = normalizeCyberComponent(cleanPiece)
+  const resolvedPiece = component?.piece || cleanPiece
+  const basePiece = component?.basePiece || resolvedPiece
+  const folderGroup =
+    component?.folderGroup ||
+    fallback.folderGroup ||
+    getFolderForPiece(resolvedPiece, fallback.finalFamily)
+
+  return {
+    piece: resolvedPiece,
+    basePiece,
+    folderGroup,
   }
 }

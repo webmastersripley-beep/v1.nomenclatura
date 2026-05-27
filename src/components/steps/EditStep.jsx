@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import EditableFamilyTitle from "@/components/common/EditableFamilyTitle"
 import ImageModal from "@/components/common/ImageModal"
 import { analyzeImageWithGemini } from "@/services/geminiService"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
@@ -11,6 +12,8 @@ const EMPTY_RESULTS = []
 export default function EditStep({ onBack, onNext }) {
   const results = useNomenclaturaStore((state) => state.results) || EMPTY_RESULTS
   const updateResult = useNomenclaturaStore((state) => state.updateResult)
+  const renameFamily = useNomenclaturaStore((state) => state.renameFamily)
+  const renameResultFamily = useNomenclaturaStore((state) => state.renameResultFamily)
   const defaultConfig = useNomenclaturaStore((state) => state.defaultConfig)
 
   const groupedFamilies = groupByPiece(results)
@@ -177,6 +180,10 @@ export default function EditStep({ onBack, onNext }) {
               defaultConfig={defaultConfig}
               updateResult={updateResult}
               updateFamilyField={updateFamilyField}
+              onRenameFamily={(nextPiece) => {
+                renameFamily(family.familyId, nextPiece)
+                renameResultFamily(family.familyId, nextPiece)
+              }}
               setSelectedImage={setSelectedImage}
               isActive={activeFamily?.familyId === family.familyId}
               isExpanded={expandedFamilyIds.has(family.familyId)}
@@ -220,6 +227,7 @@ function FamilyCard({
   defaultConfig,
   updateResult,
   updateFamilyField,
+  onRenameFamily,
   setSelectedImage,
   isActive,
   isExpanded,
@@ -273,7 +281,10 @@ function FamilyCard({
 
         <div className="min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <h3 className="text-xl font-bold">Familia {family.piece}</h3>
+            <EditableFamilyTitle
+              piece={family.piece}
+              onSave={onRenameFamily}
+            />
 
             <span className="text-sm text-zinc-500">
               {family.items.length} pieza(s)
@@ -296,7 +307,7 @@ function FamilyCard({
             <Field
               label="Componente"
               value={firstItem.piece}
-              onChange={(value) => updateFamilyField(family, "piece", value)}
+              onChange={onRenameFamily}
             />
             <Field
               label="Campana"

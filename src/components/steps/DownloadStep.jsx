@@ -6,7 +6,6 @@ import {
   downloadZip,
 } from "@/services/downloadZip"
 import { downloadImagesDirect } from "@/services/downloadImagesDirect"
-import { downloadMetadata } from "@/services/downloadMetadata"
 import { saveProcess } from "@/services/saveProcess"
 import { compressHeavyImages } from "@/services/compressImages"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
@@ -18,10 +17,9 @@ import { validateWarnings } from "@/utils/validateWarnings"
 export default function DownloadStep({ onBack }) {
   const results = useNomenclaturaStore((state) => state.results) || []
   const setResults = useNomenclaturaStore((state) => state.setResults)
-  const processAuditStatus = useNomenclaturaStore((state) => state.processAuditStatus)
-  const processAuditError = useNomenclaturaStore((state) => state.processAuditError)
   const setProcessAuditStatus = useNomenclaturaStore((state) => state.setProcessAuditStatus)
   const setProcessAuditError = useNomenclaturaStore((state) => state.setProcessAuditError)
+  const resetProject = useNomenclaturaStore((state) => state.resetProject)
   const downloadMode = useUserStore((state) => state.preferences.download_mode)
   const isDirectDownload = downloadMode === "directo"
 
@@ -34,6 +32,11 @@ export default function DownloadStep({ onBack }) {
 
   const warnings = validateWarnings(results)
   const hasWarnings = warnings.length > 0
+
+  const handleNewProcess = () => {
+    setPendingDownload(null)
+    resetProject()
+  }
 
   const heavyFiles = results.filter(
   (item) =>
@@ -97,11 +100,6 @@ const totalHeavyKb =
     }
   }
 
-  const handleMetadataDownload = () => {
-    downloadMetadata(results)
-    toast.success("Metadata JSON descargada")
-  }
-
   const handleCompressImages = async () => {
     try {
       setIsCompressing(true)
@@ -124,11 +122,6 @@ const totalHeavyKb =
       key: "d",
       enabled: !pendingDownload && !hasErrors && !isSaving,
       handler: handleDownload,
-    },
-    {
-      key: "j",
-      enabled: !pendingDownload,
-      handler: handleMetadataDownload,
     },
     {
       key: "c",
@@ -170,10 +163,6 @@ const totalHeavyKb =
             ? `${errors.length} error(es) encontrados`
             : "Todo listo para descargar"}
         </p>
-        <SupabaseStatusBadge
-          status={processAuditStatus}
-          error={processAuditError}
-        />
         {heavyFiles.length > 0 && (
           <div className="mt-4 bg-yellow-950/20 border border-yellow-900 rounded-xl p-4">
             <p className="text-yellow-300 font-medium">
@@ -246,6 +235,13 @@ const totalHeavyKb =
         </button>
 
         <button
+          onClick={handleNewProcess}
+          className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 transition"
+        >
+          Nuevo proceso
+        </button>
+
+        <button
           onClick={handleDownload}
           disabled={hasErrors || isSaving}
           aria-keyshortcuts="D"
@@ -264,23 +260,6 @@ const totalHeavyKb =
             : isDirectDownload
               ? "Guardar y descargar imágenes"
               : "Guardar y descargar ZIP"}
-        </button>
-
-        <button
-          onClick={handleMetadataDownload}
-          aria-keyshortcuts="J"
-          title="Descargar metadata JSON"
-          className="
-            px-4 py-2
-            rounded-xl
-            bg-zinc-800
-            hover:bg-zinc-700
-            transition
-            text-white
-            font-medium
-          "
-        >
-          Descargar metadata JSON
         </button>
 
         <button
@@ -314,6 +293,7 @@ const totalHeavyKb =
           results={results}
           setProcessAuditStatus={setProcessAuditStatus}
           setProcessAuditError={setProcessAuditError}
+          onNewProcess={handleNewProcess}
           onClose={() => setPendingDownload(null)}
           onSaved={() => setPendingDownload(null)}
         />
@@ -322,41 +302,18 @@ const totalHeavyKb =
   )
 }
 
-function SupabaseStatusBadge({ status, error }) {
-  const labelMap = {
-    syncing: "Sincronizando Supabase",
-    saved: "Guardado en Supabase",
-    error: "Error al guardar",
-    disabled: "Supabase no configurado",
-    idle: "Supabase pendiente",
-  }
-
-  return (
-    <p
-      title={error || labelMap[status] || "Supabase"}
-      className={`mt-2 text-sm font-semibold ${
-        status === "error"
-          ? "text-red-300"
-          : status === "saved"
-            ? "text-emerald-300"
-            : "text-zinc-400"
-      }`}
-    >
-      {labelMap[status] || "Supabase pendiente"}
-    </p>
-  )
-}
-
 function BatchNameModal({
   pendingDownload,
   results,
   setProcessAuditStatus,
   setProcessAuditError,
+  onNewProcess,
   onClose,
   onSaved,
 }) {
   const [batchName, setBatchName] = useState("")
   const [isRegistering, setIsRegistering] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
 
   const handleSave = async () => {
     const cleanName = batchName.trim()
@@ -381,8 +338,8 @@ function BatchNameModal({
       )
 
       setProcessAuditStatus("saved")
+      setIsSaved(true)
       toast.success("Tanda guardada en historial")
-      onSaved()
     } catch (error) {
       console.error(error)
       setProcessAuditStatus("error")
@@ -401,38 +358,67 @@ function BatchNameModal({
         </h3>
 
         <p className="mt-2 text-sm text-zinc-400">
-          {pendingDownload.localMessage}. Este nombre permitira que otros usuarios la encuentren en historial.
+          {isSaved
+            ? "La tanda quedo guardada. Puedes iniciar otro proceso con el estado limpio."
+            : `${pendingDownload.localMessage}. Este nombre permitira que otros usuarios la encuentren en historial.`}
         </p>
 
-        <label className="mt-5 block space-y-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-            Nombre
-          </span>
-          <input
-            value={batchName}
-            onChange={(event) => setBatchName(event.target.value)}
-            placeholder="DESCARGA1"
-            className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-500"
-          />
-        </label>
+        {!isSaved && (
+          <label className="mt-5 block space-y-2">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+              Nombre
+            </span>
+            <input
+              value={batchName}
+              onChange={(event) => setBatchName(event.target.value)}
+              placeholder="DESCARGA1"
+              className="h-12 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-4 text-white outline-none transition placeholder:text-zinc-600 focus:border-zinc-500"
+            />
+          </label>
+        )}
 
         <div className="mt-6 flex flex-wrap justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
-          >
-            Guardar despues
-          </button>
+          {isSaved ? (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+              >
+                Quedarme aqui
+              </button>
 
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isRegistering}
-            className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-          >
-            {isRegistering ? "Guardando..." : "Guardar tanda"}
-          </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onNewProcess()
+                  onSaved()
+                }}
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200"
+              >
+                Nuevo proceso
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-semibold transition hover:bg-zinc-700"
+              >
+                Guardar despues
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={isRegistering}
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {isRegistering ? "Guardando..." : "Guardar tanda"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/core"
 import { toast } from "sonner"
 
+import EditableFamilyTitle from "@/components/common/EditableFamilyTitle"
 import ImageModal from "@/components/common/ImageModal"
 import { recordProcessEvent } from "@/services/processAuditService"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
@@ -26,9 +27,8 @@ export default function ReviewStep({ families, onBack, onNext }) {
   const moveFileToFamily = useNomenclaturaStore((state) => state.moveFileToFamily)
   const moveFileToManual = useNomenclaturaStore((state) => state.moveFileToManual)
   const createEmptyFamily = useNomenclaturaStore((state) => state.createEmptyFamily)
+  const renameFamily = useNomenclaturaStore((state) => state.renameFamily)
   const processAuditId = useNomenclaturaStore((state) => state.processAuditId)
-  const processAuditStatus = useNomenclaturaStore((state) => state.processAuditStatus)
-  const processAuditError = useNomenclaturaStore((state) => state.processAuditError)
 
   const [showManuals, setShowManuals] = useState(true)
   const [selectedImage, setSelectedImage] = useState(null)
@@ -200,6 +200,20 @@ export default function ReviewStep({ families, onBack, onNext }) {
     }
   }
 
+  const handleRenameFamily = (family, nextPiece) => {
+    if (!nextPiece || nextPiece === family.piece) return
+
+    renameFamily(family.familyId, nextPiece)
+    recordReviewEvent(processAuditId, {
+      type: "rename_family",
+      targetFamilyId: family.familyId,
+      payload: {
+        oldPiece: family.piece,
+        newPiece: nextPiece,
+      },
+    })
+  }
+
   useKeyboardShortcuts([
     {
       key: "m",
@@ -260,11 +274,6 @@ export default function ReviewStep({ families, onBack, onNext }) {
                   </div>
 
                   <div className="flex flex-wrap gap-3">
-                    <SupabaseStatusBadge
-                      status={processAuditStatus}
-                      error={processAuditError}
-                    />
-
                     <button
                       onClick={() => setShowManuals(!showManuals)}
                       aria-keyshortcuts="M"
@@ -302,6 +311,7 @@ export default function ReviewStep({ families, onBack, onNext }) {
                   <FamilyDropCard
                     key={family.familyId}
                     family={family}
+                    onRename={handleRenameFamily}
                     onOpen={() => setActiveFamilyId(family.familyId)}
                     onImageClick={setSelectedImage}
                   />
@@ -327,6 +337,7 @@ export default function ReviewStep({ families, onBack, onNext }) {
             createEmptyFamily={createEmptyFamily}
             moveFileToFamily={moveFileToFamily}
             moveFileToManual={moveFileToManual}
+            onRenameFamily={handleRenameFamily}
             processAuditId={processAuditId}
             onImageClick={setSelectedImage}
             onClose={() => setActiveFamilyId(null)}
@@ -348,31 +359,6 @@ export default function ReviewStep({ families, onBack, onNext }) {
         />
       )}
     </>
-  )
-}
-
-function SupabaseStatusBadge({ status, error }) {
-  const labelMap = {
-    syncing: "Sincronizando",
-    saved: "Guardado en Supabase",
-    error: "Error al guardar",
-    disabled: "Supabase no configurado",
-    idle: "Supabase pendiente",
-  }
-
-  return (
-    <span
-      title={error || labelMap[status] || "Supabase"}
-      className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold ${
-        status === "error"
-          ? "bg-red-500/15 text-red-200"
-          : status === "saved"
-            ? "bg-emerald-500/15 text-emerald-200"
-            : "bg-zinc-800 text-zinc-300"
-      }`}
-    >
-      {labelMap[status] || "Supabase"}
-    </span>
   )
 }
 
@@ -422,7 +408,7 @@ function DragPreview({ drag }) {
   )
 }
 
-function FamilyDropCard({ family, onOpen, onImageClick }) {
+function FamilyDropCard({ family, onRename, onOpen, onImageClick }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `family-${family.familyId}`,
     data: {
@@ -449,14 +435,11 @@ function FamilyDropCard({ family, onOpen, onImageClick }) {
       <div className="relative flex h-full flex-col">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h3 className="truncate text-xl font-bold">
-              Familia {family.piece}
-              {family.groupNumber ? (
-                <span className="ml-2 font-normal text-zinc-500">
-                  grupo {family.groupNumber}
-                </span>
-              ) : null}
-            </h3>
+            <EditableFamilyTitle
+              piece={family.piece}
+              groupNumber={family.groupNumber}
+              onSave={(nextPiece) => onRename(family, nextPiece)}
+            />
 
             <p className="mt-1 text-sm text-zinc-500">
               {family.files.length} pieza(s)
@@ -823,6 +806,7 @@ function FamilyDetailOverlay({
   createEmptyFamily,
   moveFileToFamily,
   moveFileToManual,
+  onRenameFamily,
   processAuditId,
   onImageClick,
   onClose,
@@ -858,14 +842,14 @@ function FamilyDetailOverlay({
                 Detalle de familia
               </p>
 
-              <h3 className="mt-2 text-3xl font-bold">
-                Familia {family.piece}
-                {family.groupNumber ? (
-                  <span className="ml-2 font-normal text-zinc-500">
-                    grupo {family.groupNumber}
-                  </span>
-                ) : null}
-              </h3>
+              <div className="mt-2">
+                <EditableFamilyTitle
+                  piece={family.piece}
+                  groupNumber={family.groupNumber}
+                  size="lg"
+                  onSave={(nextPiece) => onRenameFamily(family, nextPiece)}
+                />
+              </div>
 
               <p className="mt-2 text-sm text-zinc-400">
                 {family.files.length} pieza(s). Arrastra manuales aquí o mueve piezas con los controles.
