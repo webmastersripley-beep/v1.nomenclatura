@@ -7,12 +7,54 @@ export const COMPONENT_FOLDER_MAP = {
   BOX_VENTA: "box-venta",
   CINTILLO: "cintillos",
   AUX: "box-auxiliares",
+  AUX_GRANDE: "box-auxiliares",
   MARCA: "marcas",
   NUEVAS: "nuevas",
+  TOP_VENTAS: "top-ventas",
+  OFERTA_LIMITE: "oferta-limite",
+  ULTIMAS_UNIDADES: "ultimas-unidades",
+  MUNDO_BOX: "boxs",
+  MUNDO_AUX: "box-auxiliares",
+  MUNDO_MARCA: "marcas",
   REVISION_MANUAL: "manuales",
 }
 
 const COMPONENT_RULES = [
+  {
+    family: "MUNDO_BOX",
+    canonicalPrefix: "mundo-bx",
+    aliases: ["mundo-bx", "mte-bx", "mmu-bx", "mho-bx", "mde-bx", "minf-bx"],
+  },
+  {
+    family: "MUNDO_AUX",
+    canonicalPrefix: "mundo-aux",
+    aliases: ["mundo-aux", "mte-aux", "mmu-aux", "mho-aux", "mde-aux", "minf-aux"],
+  },
+  {
+    family: "MUNDO_MARCA",
+    canonicalPrefix: "mundo-marc",
+    aliases: ["mundo-marc", "mte-marc", "mmu-marc", "mho-marc", "mde-marc", "minf-marc"],
+  },
+  {
+    family: "AUX_GRANDE",
+    canonicalPrefix: "aux0a",
+    aliases: ["aux0a", "auxoa", "aux-grande", "aux-alto", "box-aux-alto"],
+  },
+  {
+    family: "TOP_VENTAS",
+    canonicalPrefix: "top",
+    aliases: ["top", "top-ventas", "top-venta"],
+  },
+  {
+    family: "OFERTA_LIMITE",
+    canonicalPrefix: "ol",
+    aliases: ["ol", "oferta-limite", "oferta-al-limite"],
+  },
+  {
+    family: "ULTIMAS_UNIDADES",
+    canonicalPrefix: "uu",
+    aliases: ["uu", "ultimas-unidades", "punta-precio", "apurate"],
+  },
   {
     family: "AUX",
     canonicalPrefix: "aux",

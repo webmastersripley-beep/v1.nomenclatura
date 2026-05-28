@@ -1,4 +1,5 @@
 import { getFolderForPiece } from "./cyberNomenclatureRules.js"
+import { getWorldZipFolder } from "./worldRules.js"
 
 export function buildZipEntryPath(item, downloadMode = "por-familia") {
   const fileName = sanitizeZipSegment(item.finalName || "archivo.webp")
@@ -16,8 +17,9 @@ export function buildZipEntryPath(item, downloadMode = "por-familia") {
   }
 
   const folderGroup =
-    item.folderGroup ||
     item.zipFolder ||
+    (item.worldCode ? getWorldZipFolder(item) : "") ||
+    item.folderGroup ||
     getFolderForPiece(item.piece || "", item.finalFamily || "")
 
   return `${sanitizeZipSegment(folderGroup || "manual")}/${fileName}`

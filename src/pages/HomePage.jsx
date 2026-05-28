@@ -21,6 +21,13 @@ import {
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
 import { defaultPreferences, useUserStore } from "@/store/useUserStore"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
+import {
+  RULE_PROFILE_AUTO,
+  RULE_PROFILE_CYBERDAY,
+  RULE_PROFILE_GENERIC,
+  RULE_PROFILE_LABELS,
+  resolveRuleProfile,
+} from "@/utils/ruleProfiles"
 
 export default function HomePage() {
   const {
@@ -34,6 +41,9 @@ export default function HomePage() {
     setIsProcessing,
     setProcessingProgress,
     setDefaultConfig,
+    activeCampaigns: storedActiveCampaigns,
+    setActiveCampaigns,
+    selectedCampaign,
     setSelectedCampaign,
     processAuditId,
     setProcessAuditId,
@@ -58,7 +68,13 @@ export default function HomePage() {
 
   const [campaignOptions, setCampaignOptions] = useState([])
   const [showCampaignSelector, setShowCampaignSelector] = useState(false)
+  const [campaignSelectorMode, setCampaignSelectorMode] = useState("process")
+  const [campaignBootstrapKey, setCampaignBootstrapKey] = useState("")
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const effectiveRuleProfile = resolveRuleProfile(
+    defaultConfig.ruleProfile || RULE_PROFILE_AUTO,
+    defaultConfig.campaign
+  )
 
   useEffect(() => {
     if (!user) {
@@ -108,6 +124,110 @@ export default function HomePage() {
     setProcessAuditStatus,
   ])
 
+  useEffect(() => {
+    const country =
+      effectivePreferences.default_country ||
+      defaultConfig.country ||
+      "cl"
+    const fallbackCampaign =
+      effectivePreferences.default_campaign ||
+      "hg"
+    const bootstrapKey = [
+      user?.id || "anon",
+      currentStep,
+      effectivePreferences.use_active_campaigns ? "active" : "manual",
+      country,
+      fallbackCampaign,
+    ].join("|")
+
+    if (currentStep !== "upload" || campaignBootstrapKey === bootstrapKey) {
+      return
+    }
+
+    let cancelled = false
+
+    async function resolveStartupCampaign() {
+      if (!user || !effectivePreferences.use_active_campaigns) {
+        setActiveCampaigns([])
+        setSelectedCampaign(null)
+        setDefaultConfig({
+          country,
+          campaign: fallbackCampaign,
+          descriptorMode: effectiveDescriptorMode,
+        })
+        setCampaignBootstrapKey(bootstrapKey)
+        return
+      }
+
+      try {
+        const campaigns = await getActiveCampaigns(country)
+
+        if (cancelled) return
+
+        setActiveCampaigns(campaigns)
+        setCampaignBootstrapKey(bootstrapKey)
+
+        if (campaigns.length === 0) {
+          setSelectedCampaign(null)
+          setDefaultConfig({
+            country,
+            campaign: fallbackCampaign,
+            descriptorMode: effectiveDescriptorMode,
+          })
+          toast.info(`No hay campanas activas. Se usara ${fallbackCampaign}`)
+          return
+        }
+
+        if (campaigns.length === 1) {
+          const campaign = campaigns[0]
+
+          setSelectedCampaign(campaign)
+          setDefaultConfig({
+            country,
+            campaign: campaign.code,
+            descriptorMode: effectiveDescriptorMode,
+          })
+          return
+        }
+
+        setCampaignOptions(campaigns)
+        setCampaignSelectorMode("startup")
+        setShowCampaignSelector(true)
+      } catch (error) {
+        if (cancelled) return
+
+        console.error(error)
+        setActiveCampaigns([])
+        setSelectedCampaign(null)
+        setDefaultConfig({
+          country,
+          campaign: fallbackCampaign,
+          descriptorMode: effectiveDescriptorMode,
+        })
+        setCampaignBootstrapKey(bootstrapKey)
+        toast.error("No se pudieron leer las campanas activas")
+      }
+    }
+
+    resolveStartupCampaign()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    campaignBootstrapKey,
+    currentStep,
+    defaultConfig.country,
+    effectiveDescriptorMode,
+    effectivePreferences.default_campaign,
+    effectivePreferences.default_country,
+    effectivePreferences.use_active_campaigns,
+    setActiveCampaigns,
+    setDefaultConfig,
+    setSelectedCampaign,
+    user,
+  ])
+
   const handleFilesReady = async (groupedData) => {
     setFamilies(groupedData.families)
     setManualFiles(groupedData.manualFiles)
@@ -116,8 +236,16 @@ export default function HomePage() {
     try {
       setProcessAuditStatus("syncing")
       setProcessAuditError("")
+      const classifiedRuleProfile =
+        groupedData.families?.[0]?.files?.[0]?.ruleProfile ||
+        groupedData.manualFiles?.[0]?.ruleProfile ||
+        effectiveRuleProfile
       const process = await startProcessAudit(groupedData, {
-        config: defaultConfig,
+        config: {
+          ...defaultConfig,
+          ruleProfile: classifiedRuleProfile,
+          worldMode: Boolean(defaultConfig.worldMode),
+        },
       })
 
       if (process?.id) {
@@ -187,6 +315,8 @@ export default function HomePage() {
         country,
         campaign: fallbackCampaign,
         descriptorMode: effectiveDescriptorMode,
+        ruleProfile: resolveRuleProfile(defaultConfig.ruleProfile, fallbackCampaign),
+        worldMode: Boolean(defaultConfig.worldMode),
       }
 
       setDefaultConfig(config)
@@ -195,8 +325,25 @@ export default function HomePage() {
       return
     }
 
+    if (selectedCampaign) {
+      const config = {
+        ...defaultConfig,
+        country,
+        campaign: selectedCampaign.code,
+        descriptorMode: effectiveDescriptorMode,
+        ruleProfile: resolveRuleProfile(defaultConfig.ruleProfile, selectedCampaign.code),
+        worldMode: Boolean(defaultConfig.worldMode),
+      }
+
+      setDefaultConfig(config)
+      await processWithConfig(config)
+      return
+    }
+
     const activeCampaigns =
-      await getActiveCampaigns(country)
+      storedActiveCampaigns.length > 0
+        ? storedActiveCampaigns
+        : await getActiveCampaigns(country)
 
     if (activeCampaigns.length === 0) {
       const config = {
@@ -204,6 +351,8 @@ export default function HomePage() {
         country,
         campaign: fallbackCampaign,
         descriptorMode: effectiveDescriptorMode,
+        ruleProfile: resolveRuleProfile(defaultConfig.ruleProfile, fallbackCampaign),
+        worldMode: Boolean(defaultConfig.worldMode),
       }
 
       setDefaultConfig(config)
@@ -225,6 +374,8 @@ export default function HomePage() {
         country,
         campaign: campaign.code,
         descriptorMode: effectiveDescriptorMode,
+        ruleProfile: resolveRuleProfile(defaultConfig.ruleProfile, campaign.code),
+        worldMode: Boolean(defaultConfig.worldMode),
       }
 
       setDefaultConfig(config)
@@ -239,6 +390,7 @@ export default function HomePage() {
     }
 
     setCampaignOptions(activeCampaigns)
+    setCampaignSelectorMode("process")
     setShowCampaignSelector(true)
   }
 
@@ -258,6 +410,8 @@ export default function HomePage() {
       country,
       campaign: campaign.code,
       descriptorMode: effectiveDescriptorMode,
+      ruleProfile: resolveRuleProfile(defaultConfig.ruleProfile, campaign.code),
+      worldMode: Boolean(defaultConfig.worldMode),
     }
 
     setDefaultConfig(config)
@@ -265,7 +419,17 @@ export default function HomePage() {
 
     setShowCampaignSelector(false)
 
+    if (campaignSelectorMode === "startup") {
+      return
+    }
+
     await processWithConfig(config)
+  }
+
+  const toggleWorldMode = () => {
+    setDefaultConfig({
+      worldMode: !defaultConfig.worldMode,
+    })
   }
 
   const goBack = () => {
@@ -447,7 +611,14 @@ export default function HomePage() {
 
           </div>
 
-          <UserLogin />
+          <div className="flex items-center gap-3">
+            <WorldModeToggle
+              active={Boolean(defaultConfig.worldMode)}
+              onToggle={toggleWorldMode}
+            />
+
+            <UserLogin />
+          </div>
 
         </div>
 
@@ -457,11 +628,22 @@ export default function HomePage() {
 
         {currentStep === "upload" && (
 
-          <ImageUploader
-            onFilesReady={
-              handleFilesReady
-            }
-          />
+          <div className="space-y-5">
+            <RuleProfileSelector
+              value={defaultConfig.ruleProfile || RULE_PROFILE_AUTO}
+              effectiveValue={effectiveRuleProfile}
+              campaign={defaultConfig.campaign}
+              selectedCampaign={selectedCampaign}
+              worldMode={Boolean(defaultConfig.worldMode)}
+              onChange={(ruleProfile) => setDefaultConfig({ ruleProfile })}
+            />
+
+            <ImageUploader
+              onFilesReady={
+                handleFilesReady
+              }
+            />
+          </div>
         )}
 
         {currentStep === "review" && (
@@ -537,6 +719,73 @@ export default function HomePage() {
       </section>
 
     </main>
+  )
+}
+
+function WorldModeToggle({ active, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      title={active ? "Reglas de mundos activas" : "Activar reglas de mundos"}
+      className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+        active
+          ? "border-emerald-400/40 bg-emerald-500 text-black"
+          : "border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-600 hover:text-white"
+      }`}
+    >
+      Mundos
+    </button>
+  )
+}
+
+function RuleProfileSelector({
+  value,
+  effectiveValue,
+  campaign,
+  selectedCampaign,
+  worldMode,
+  onChange,
+}) {
+  const options = [
+    RULE_PROFILE_AUTO,
+    RULE_PROFILE_GENERIC,
+    RULE_PROFILE_CYBERDAY,
+  ]
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          Perfil de reglas
+        </p>
+        <p className="mt-1 text-sm text-zinc-300">
+          Activo: {RULE_PROFILE_LABELS[effectiveValue] || effectiveValue}
+        </p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Campana: {selectedCampaign?.name || campaign || "-"} · Mundos:{" "}
+          {worldMode ? "activo" : "inactivo"}
+        </p>
+      </div>
+
+      <div className="inline-flex rounded-xl border border-zinc-800 bg-black p-1">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onChange(option)}
+            className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
+              value === option
+                ? "bg-white text-black"
+                : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
+            }`}
+          >
+            {RULE_PROFILE_LABELS[option]}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

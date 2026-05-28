@@ -10,6 +10,7 @@ import {
   normalizeCyberComponent,
 } from "../utils/cyberNomenclatureRules.js"
 import { resolveDuplicateFinalNames } from "../utils/resolveDuplicateFinalNames.js"
+import { RULE_PROFILE_AUTO } from "../utils/ruleProfiles.js"
 
 export const useNomenclaturaStore = create((set) => ({
   currentStep: "upload",
@@ -29,6 +30,8 @@ export const useNomenclaturaStore = create((set) => ({
     country: "cl",
     date: getTodayFormatted(),
     descriptorMode: "category",
+    ruleProfile: RULE_PROFILE_AUTO,
+    worldMode: false,
   },
   activeCampaigns: [],
 
@@ -382,6 +385,58 @@ setDefaultConfig:
         const updatedItem = {
           ...item,
           [field]: cleanValue,
+        }
+
+        updatedItem.finalName =
+          buildFinalName(
+            {
+              ...updatedItem,
+              category:
+                updatedItem.category ||
+                "manual",
+              date:
+                updatedItem.date ||
+                state.defaultConfig.date,
+            },
+            updatedItem.descriptorMode ||
+            state.defaultConfig.descriptorMode ||
+            "category"
+          )
+
+        return updatedItem
+      })
+
+      return {
+        results: resolveDuplicateFinalNames(updatedResults),
+      }
+    }),
+  updateResultPatch: (id, patch) =>
+    set((state) => {
+      const updatedResults = state.results.map((item) => {
+        if (item.id !== id) return item
+
+        const cleanPatch = Object.fromEntries(
+          Object.entries(patch || {}).map(([field, value]) => {
+            if (field === "worldCandidates") return [field, value]
+            if (["finalFamily", "componentFamily", "isWorldFamily"].includes(field)) {
+              return [field, value]
+            }
+            if (Array.isArray(value)) return [field, sanitizeTags(value)]
+            if ([
+              "folderGroup",
+              "zipFolder",
+              "worldStatus",
+              "worldConfidence",
+            ].includes(field)) {
+              return [field, String(value || "")]
+            }
+            return [field, sanitizeValue(value)]
+          })
+        )
+
+        const updatedItem = {
+          ...item,
+          ...cleanPatch,
         }
 
         updatedItem.finalName =

@@ -3,6 +3,13 @@ import { buildFinalName } from "@/utils/buildFinalName"
 import { getFolderForPiece } from "@/utils/cyberNomenclatureRules"
 import { resolveDuplicateFinalNames } from "@/utils/resolveDuplicateFinalNames"
 import { sanitizeTags, sanitizeValue } from "@/utils/sanitizeValue"
+import {
+  buildWorldPiece,
+  getWorldFamilyForComponentFamily,
+  getWorldZipFolder,
+  isWorldFamily,
+  resolveWorldFromSignals,
+} from "@/utils/worldRules"
 
 const DEFAULT_CONCURRENCY = 4
 const MAX_RETRIES = 2
@@ -166,6 +173,16 @@ function buildBaseResult(family, file, config) {
     nameVersion: file.nameVersion || null,
     sizeVersion: file.sizeVersion || null,
     detectedVersion: file.detectedVersion || null,
+    ruleProfile: file.ruleProfile || config.ruleProfile || "generic",
+    worldMode: Boolean(file.worldMode || config.worldMode),
+    componentFamily: file.componentFamily || null,
+    isWorldFamily: Boolean(file.isWorldFamily || isWorldFamily(file.finalFamily)),
+    worldCode: file.worldCode || "",
+    worldName: file.worldName || "",
+    worldFolder: file.worldFolder || "",
+    worldConfidence: file.worldConfidence || "",
+    worldStatus: file.worldStatus || "",
+    worldReasons: file.worldReasons || [],
     familyClassification: file.familyClassification || null,
     piece: file.piece || family.piece || "manual",
     format: file.format || file.detectedFormat || "manual",
@@ -222,6 +239,13 @@ function applyAiResult(item, result) {
   const brand = sanitizeValue(result?.brand || "")
   const product = sanitizeValue(result?.product || "")
   const tags = sanitizeTags(result?.tags || [])
+  const worldPatch = resolveWorldPatch(item, {
+    ...result,
+    category,
+    brand,
+    product,
+    tags,
+  })
 
   const updatedItem = {
     ...item,
@@ -229,7 +253,10 @@ function applyAiResult(item, result) {
     brand,
     product,
     tags,
-    status: category ? "detected" : "review",
+    ...worldPatch,
+    status: category && worldPatch.worldStatus !== "REVISION_MANUAL"
+      ? "detected"
+      : "review",
   }
 
   updatedItem.finalName = buildFinalName(
@@ -241,6 +268,66 @@ function applyAiResult(item, result) {
   )
 
   return updatedItem
+}
+
+function resolveWorldPatch(item, result) {
+  const targetWorldFamily = getTargetWorldFamily(item)
+
+  if (!targetWorldFamily) return {}
+
+  const worldResult = resolveWorldFromSignals({
+    world: result?.world,
+    category: result?.category,
+    product: result?.product,
+    brand: result?.brand,
+    tags: result?.tags,
+    originalName: item.originalName,
+  })
+
+  const basePatch = {
+    worldCode: worldResult.worldCode,
+    worldName: worldResult.worldName,
+    worldFolder: worldResult.worldFolder,
+    worldConfidence: worldResult.worldConfidence,
+    worldStatus: worldResult.worldStatus,
+    worldReasons: worldResult.worldReasons,
+    worldCandidates: worldResult.worldCandidates,
+  }
+
+  if (!worldResult.worldCode) return basePatch
+
+  const worldPiece = buildWorldPiece({
+    worldCode: worldResult.worldCode,
+    worldFamily: targetWorldFamily,
+    piece: item.piece,
+  })
+  const folderGroup =
+    item.folderGroup ||
+    getFolderForPiece(worldPiece, item.finalFamily)
+
+  return {
+    ...basePatch,
+    finalFamily: targetWorldFamily,
+    componentFamily: item.componentFamily || item.finalFamily,
+    isWorldFamily: true,
+    piece: worldPiece,
+    folderGroup,
+    zipFolder: getWorldZipFolder({
+      worldCode: worldResult.worldCode,
+      worldFolder: worldResult.worldFolder,
+      folderGroup,
+    }),
+  }
+}
+
+function getTargetWorldFamily(item) {
+  if (item.isWorldFamily || isWorldFamily(item.finalFamily)) {
+    return item.finalFamily
+  }
+
+  if (item.ruleProfile !== "cyberday" || !item.worldMode) return ""
+
+  return getWorldFamilyForComponentFamily(item.finalFamily)
 }
 
 async function runWithConcurrency(items, concurrency, worker) {

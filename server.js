@@ -49,6 +49,9 @@ app.post("/api/analyze-image", async (req, res) => {
               "brand": "",
               "product": "",
               "campaign": "",
+              "world": "",
+              "worldConfidence": "",
+              "worldReasons": [],
               "tags": []
             }
 
@@ -71,6 +74,17 @@ app.post("/api/analyze-image", async (req, res) => {
 
             campaign:
             tipo de campana detectada.
+
+            world:
+            si la imagen pertenece claramente a un mundo, usa SOLO uno de estos valores:
+            tecno, mujer, hombre, deporte, infantil.
+            Si no hay evidencia clara, usar "".
+
+            worldConfidence:
+            alta, media, baja o "".
+
+            worldReasons:
+            razones cortas del mundo elegido.
 
             tags:
             palabras clave utiles.

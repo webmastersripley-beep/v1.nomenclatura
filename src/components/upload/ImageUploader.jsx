@@ -6,9 +6,12 @@ import { parseFileName } from "@/utils/parseFileName"
 import { groupFamilies } from "@/utils/groupFamilies"
 import { getImageDimensions } from "@/utils/getImageDimensions"
 import { classifyImageFamily } from "@/utils/classifyImageFamily"
+import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
+import { resolveRuleProfile } from "@/utils/ruleProfiles"
 
 export default function ImageUploader({ onFilesReady }) {
   const folderInputRef = useRef(null)
+  const defaultConfig = useNomenclaturaStore((state) => state.defaultConfig)
   const [isPreparing, setIsPreparing] = useState(false)
 
   const prepareFiles = async (acceptedFiles) => {
@@ -19,17 +22,29 @@ export default function ImageUploader({ onFilesReady }) {
     )
 
     try {
+      const effectiveRuleProfile = resolveRuleProfile(
+        defaultConfig.ruleProfile,
+        defaultConfig.campaign
+      )
       const parsedFiles = await Promise.all(
         imageFiles.map(async (file) => {
           const dimensions = await getImageDimensions(file)
           const parsedName = parseFileName(file.name)
           const classification = classifyImageFamily({
-            fileName: file.name,
+            fileName: file.webkitRelativePath || file.name,
             width: dimensions.width,
             height: dimensions.height,
+            ruleProfile: effectiveRuleProfile,
+            campaign: defaultConfig.campaign,
+            worldMode: Boolean(defaultConfig.worldMode),
           })
           const inferredPiece =
-            !classification.nameFamily && classification.defaultPiece
+            classification.isWorldFamily
+              ? buildWorldProvisionalPiece(
+                  classification.defaultPiece,
+                  parsedName.piece || file.name
+                )
+              : !classification.nameFamily && classification.defaultPiece
               ? classification.defaultPiece
               : parsedName.piece || classification.defaultPiece || null
 
@@ -50,6 +65,10 @@ export default function ImageUploader({ onFilesReady }) {
             nameVersion: classification.nameVersion,
             sizeVersion: classification.sizeVersion,
             detectedVersion: classification.version,
+            ruleProfile: classification.ruleProfile,
+            worldMode: Boolean(defaultConfig.worldMode),
+            componentFamily: classification.componentFamily,
+            isWorldFamily: classification.isWorldFamily,
             familyClassification: classification,
             piece: inferredPiece,
             format:
@@ -151,4 +170,14 @@ export default function ImageUploader({ onFilesReady }) {
       </button>
     </div>
   )
+}
+
+function buildWorldProvisionalPiece(defaultPiece, sourcePiece = "") {
+  const cleanDefault = String(defaultPiece || "")
+  const cleanSource = String(sourcePiece || "").toLowerCase()
+  const index = cleanSource.match(/(\d{1,2})/)?.[1]
+
+  if (!cleanDefault || !index) return cleanDefault
+
+  return `${cleanDefault}${Number(index)}`
 }

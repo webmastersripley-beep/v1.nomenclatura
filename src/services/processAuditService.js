@@ -5,6 +5,7 @@ import {
   CYBER_NOMENCLATURE_RULES_VERSION,
   getFolderForPiece,
 } from "@/utils/cyberNomenclatureRules"
+import { getRuleProfileVersion } from "@/utils/ruleProfiles"
 
 export async function startProcessAudit(groupedData, { config = {} } = {}) {
   if (!isSupabaseConfigured()) return null
@@ -26,7 +27,10 @@ export async function startProcessAudit(groupedData, { config = {} } = {}) {
       app_user_name: user?.name || "anonimo",
       status: "uploaded",
       current_stage: "upload",
-      rules_version: CYBER_NOMENCLATURE_RULES_VERSION,
+      rule_profile: config.ruleProfile || "generic",
+      rules_version:
+        getRuleProfileVersion(config.ruleProfile) ||
+        CYBER_NOMENCLATURE_RULES_VERSION,
       source_summary: {
         automatic_files: groupedData?.families?.flatMap((family) => family.files).length || 0,
         manual_files: groupedData?.manualFiles?.length || 0,
@@ -175,6 +179,9 @@ async function upsertFamilies(processId, families) {
     initial_piece: family.originalPiece || family.piece || "",
     final_piece: family.piece || "",
     final_family: family.files?.[0]?.finalFamily || "",
+    rule_profile: family.files?.[0]?.ruleProfile || "",
+    world_code: family.files?.[0]?.worldCode || "",
+    world_name: family.files?.[0]?.worldName || "",
     group_number: family.groupNumber || null,
     folder_group: family.folderGroup || getFolderForPiece(family.piece, family.files?.[0]?.finalFamily),
     is_manual_created: Boolean(family.isManualCreated),
@@ -183,6 +190,11 @@ async function upsertFamilies(processId, families) {
     status: family.isPlaceholder ? "placeholder" : "active",
     payload: {
       files: (family.files || []).map((file) => file.originalName),
+      world: {
+        confidence: family.files?.[0]?.worldConfidence || "",
+        status: family.files?.[0]?.worldStatus || "",
+        reasons: family.files?.[0]?.worldReasons || [],
+      },
     },
   }))
 
@@ -240,6 +252,12 @@ async function upsertFinalItems(processId, results, pathByOriginalName) {
       final_name: item.finalName,
       piece: item.piece,
       final_piece: item.piece,
+      rule_profile: item.ruleProfile || "",
+      world_code: item.worldCode || "",
+      world_name: item.worldName || "",
+      world_confidence: item.worldConfidence || "",
+      world_status: item.worldStatus || "",
+      world_reasons: Array.isArray(item.worldReasons) ? item.worldReasons : [],
       category: item.category || "",
       brand: item.brand || "",
       product: item.product || "",
@@ -302,6 +320,12 @@ function buildItemRow(
     name_version: file.nameVersion || null,
     size_version: file.sizeVersion || null,
     detected_version: file.detectedVersion || null,
+    rule_profile: file.ruleProfile || "",
+    world_code: file.worldCode || "",
+    world_name: file.worldName || "",
+    world_confidence: file.worldConfidence || "",
+    world_status: file.worldStatus || "",
+    world_reasons: Array.isArray(file.worldReasons) ? file.worldReasons : [],
     initial_piece: file.originalPiece || file.piece || "",
     final_piece: file.piece || "",
     initial_family_id: family?.familyId || file.familyId || null,
@@ -314,6 +338,7 @@ function buildItemRow(
     audit_payload: {
       source_name: file.file?.name || file.originalName || "",
       classification: file.familyClassification || null,
+      worldCandidates: file.worldCandidates || [],
       duplicateResolved: Boolean(file.duplicateResolved),
       duplicateResolutionReason: file.duplicateResolutionReason || "",
     },
@@ -338,7 +363,10 @@ async function createFallbackProcess(results, { batchName, downloadMode }) {
       download_mode: downloadMode || null,
       status: "download",
       current_stage: "download",
-      rules_version: CYBER_NOMENCLATURE_RULES_VERSION,
+      rule_profile: firstItem.ruleProfile || "generic",
+      rules_version:
+        getRuleProfileVersion(firstItem.ruleProfile) ||
+        CYBER_NOMENCLATURE_RULES_VERSION,
     })
     .select("id")
     .single()

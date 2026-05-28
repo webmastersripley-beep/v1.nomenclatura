@@ -1,19 +1,30 @@
 import {
   FAMILY_REVIEW_MANUAL,
-  IMAGE_FAMILY_RULES,
   VERSION_NAME_RULES,
-  getDefaultPieceForFamily,
   versionToFormat,
 } from "./imageFamilyRules.js"
+import {
+  RULE_PROFILE_CYBERDAY,
+  RULE_PROFILE_GENERIC,
+  getDefaultPieceForProfile,
+  getRulesForProfile,
+  resolveRuleProfile,
+} from "./ruleProfiles.js"
+import { isWorldFamily } from "./worldRules.js"
 
 const RATIO_TOLERANCE = 0.03
 const RATIO_TIE_TOLERANCE = 0.005
+const CYBERDAY_SIZE_TOLERANCE = 2
 
 export function classifyImageFamily({
   fileName = "",
   width,
   height,
+  ruleProfile = RULE_PROFILE_GENERIC,
+  campaign = "",
+  worldMode = false,
 } = {}) {
+  const effectiveRuleProfile = resolveRuleProfile(ruleProfile, campaign)
   const normalizedName = normalizeName(fileName)
   const cleanWidth = Number(width) || null
   const cleanHeight = Number(height) || null
@@ -21,7 +32,13 @@ export function classifyImageFamily({
     ? roundRatio(cleanWidth / cleanHeight)
     : null
 
-  const nameFamily = detectFamilyByName(normalizedName)
+  const nameFamily = detectFamilyByName(
+    normalizedName,
+    effectiveRuleProfile,
+    {
+      includeWorldRules: worldMode,
+    }
+  )
   const nameVersion = detectVersionByName(normalizedName)
   const exactSizeMatch = detectExactSize(
     cleanWidth,
@@ -29,6 +46,8 @@ export function classifyImageFamily({
     {
       nameFamily,
       nameVersion,
+      ruleProfile: effectiveRuleProfile,
+      includeWorldRules: worldMode,
     }
   )
   const ratioMatch = exactSizeMatch
@@ -39,11 +58,30 @@ export function classifyImageFamily({
         {
           nameFamily,
           nameVersion,
+          ruleProfile: effectiveRuleProfile,
+          includeWorldRules: worldMode,
         }
       )
 
-  const sizeFamily = exactSizeMatch?.family || ratioMatch?.family || null
-  const sizeVersion = exactSizeMatch?.version || null
+  const resolvedExactSizeMatch = resolveCyberdayWorldSizeMatch(
+    exactSizeMatch,
+    cleanWidth,
+    cleanHeight,
+    {
+      nameFamily,
+      nameVersion,
+      normalizedName,
+      ruleProfile: effectiveRuleProfile,
+      includeWorldRules: worldMode,
+    }
+  )
+  const resolvedNameFamily =
+    resolvedExactSizeMatch?.isWorld && isWorldBaseFamily(nameFamily)
+      ? resolvedExactSizeMatch.family
+      : nameFamily
+
+  const sizeFamily = resolvedExactSizeMatch?.family || ratioMatch?.family || null
+  const sizeVersion = resolvedExactSizeMatch?.version || null
   const reasons = []
 
   if (nameFamily) {
@@ -52,13 +90,13 @@ export function classifyImageFamily({
     reasons.push("nombre sin familia clara")
   }
 
-  if (exactSizeMatch?.ambiguous) {
+  if (exactSizeMatch?.ambiguous && !resolvedExactSizeMatch?.isWorld) {
     reasons.push(
       `tamano ${cleanWidth}x${cleanHeight} ambiguo: ${exactSizeMatch.candidates.join(", ")}`
     )
-  } else if (exactSizeMatch) {
+  } else if (resolvedExactSizeMatch) {
     reasons.push(
-      `tamano ${cleanWidth}x${cleanHeight} coincide con ${exactSizeMatch.family} ${exactSizeMatch.version || ""}`.trim()
+      `tamano ${cleanWidth}x${cleanHeight} coincide con ${resolvedExactSizeMatch.family} ${resolvedExactSizeMatch.version || ""}`.trim()
     )
   } else if (ratioMatch) {
     reasons.push(`proporcion ${ratio} se parece a ${ratioMatch.family}`)
@@ -88,10 +126,11 @@ export function classifyImageFamily({
         ...reasons,
         "no se pudieron leer las dimensiones reales de la imagen",
       ],
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
-  if (!nameFamily && exactSizeMatch?.ambiguous) {
+  if (!resolvedNameFamily && exactSizeMatch?.ambiguous && !resolvedExactSizeMatch?.isWorld) {
     return buildResult({
       fileName,
       width: cleanWidth,
@@ -109,16 +148,21 @@ export function classifyImageFamily({
         ...reasons,
         "el tamano coincide con mas de una familia y el nombre no decide",
       ],
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
-  if (nameFamily && exactSizeMatch && nameFamily !== exactSizeMatch.family) {
+  if (
+    resolvedNameFamily &&
+    resolvedExactSizeMatch &&
+    resolvedNameFamily !== resolvedExactSizeMatch.family
+  ) {
     return buildResult({
       fileName,
       width: cleanWidth,
       height: cleanHeight,
       ratio,
-      nameFamily,
+      nameFamily: resolvedNameFamily,
       sizeFamily,
       finalFamily: FAMILY_REVIEW_MANUAL,
       nameVersion,
@@ -128,15 +172,16 @@ export function classifyImageFamily({
       status: "INCONSISTENCIA_NOMBRE_TAMANO",
       reasons: [
         ...reasons,
-        `conflicto: nombre ${nameFamily} vs tamano ${exactSizeMatch.family}`,
+        `conflicto: nombre ${resolvedNameFamily} vs tamano ${resolvedExactSizeMatch.family}`,
       ],
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
   if (
     nameVersion &&
-    exactSizeMatch?.version &&
-    nameVersion !== exactSizeMatch.version
+    resolvedExactSizeMatch?.version &&
+    nameVersion !== resolvedExactSizeMatch.version
   ) {
     return buildResult({
       fileName,
@@ -155,28 +200,35 @@ export function classifyImageFamily({
         ...reasons,
         `conflicto: nombre ${nameVersion} vs tamano ${exactSizeMatch.version}`,
       ],
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
-  if (nameFamily && exactSizeMatch && nameFamily === exactSizeMatch.family) {
+  if (
+    resolvedNameFamily &&
+    resolvedExactSizeMatch &&
+    resolvedNameFamily === resolvedExactSizeMatch.family
+  ) {
     return buildResult({
       fileName,
       width: cleanWidth,
       height: cleanHeight,
       ratio,
-      nameFamily,
+      nameFamily: resolvedNameFamily,
       sizeFamily,
-      finalFamily: nameFamily,
+      exactSizeMatch: resolvedExactSizeMatch,
+      finalFamily: resolvedNameFamily,
       nameVersion,
       sizeVersion,
       version: nameVersion || sizeVersion,
       confidence: "ALTA",
       status: "OK",
       reasons,
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
-  if (!nameFamily && exactSizeMatch) {
+  if (!resolvedNameFamily && resolvedExactSizeMatch) {
     return buildResult({
       fileName,
       width: cleanWidth,
@@ -184,18 +236,48 @@ export function classifyImageFamily({
       ratio,
       nameFamily,
       sizeFamily,
-      finalFamily: exactSizeMatch.family,
+      exactSizeMatch: resolvedExactSizeMatch,
+      finalFamily: resolvedExactSizeMatch.family,
       nameVersion,
       sizeVersion,
       version: sizeVersion,
       confidence: "MEDIA",
       status: "PREDICCION_POR_TAMANO",
       reasons,
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
   if (nameFamily && !exactSizeMatch) {
     const version = nameVersion || ratioMatch?.version || null
+
+    if (
+      effectiveRuleProfile === RULE_PROFILE_CYBERDAY &&
+      ratioMatch?.isWorld &&
+      worldMode &&
+      isWorldBaseFamily(nameFamily)
+    ) {
+      return buildResult({
+        fileName,
+        width: cleanWidth,
+        height: cleanHeight,
+        ratio,
+        nameFamily: ratioMatch.family,
+        sizeFamily,
+        exactSizeMatch: ratioMatch,
+        finalFamily: ratioMatch.family,
+        nameVersion,
+        sizeVersion,
+        version,
+        confidence: "BAJA",
+        status: "PREDICCION_POR_TAMANO",
+        reasons: [
+          ...reasons,
+          `perfil Cyberday prioriza ${ratioMatch.family} por proporcion de mundo`,
+        ],
+        ruleProfile: effectiveRuleProfile,
+      })
+    }
 
     if (ratioMatch && ratioMatch.family !== nameFamily) {
       return buildResult({
@@ -215,6 +297,7 @@ export function classifyImageFamily({
           ...reasons,
           `se conserva ${nameFamily} porque la proporcion no es una regla exacta`,
         ],
+        ruleProfile: effectiveRuleProfile,
       })
     }
 
@@ -232,6 +315,7 @@ export function classifyImageFamily({
       confidence: "MEDIA",
       status: "OK",
       reasons,
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
@@ -243,6 +327,7 @@ export function classifyImageFamily({
       ratio,
       nameFamily,
       sizeFamily,
+      exactSizeMatch: ratioMatch,
       finalFamily: ratioMatch.family,
       nameVersion,
       sizeVersion,
@@ -250,6 +335,7 @@ export function classifyImageFamily({
       confidence: "BAJA",
       status: "PREDICCION_POR_TAMANO",
       reasons,
+      ruleProfile: effectiveRuleProfile,
     })
   }
 
@@ -270,14 +356,21 @@ export function classifyImageFamily({
       ...reasons,
       "no hay evidencia suficiente para clasificar con seguridad",
     ],
+    ruleProfile: effectiveRuleProfile,
   })
 }
 
-export function detectFamilyByName(normalizedName) {
+export function detectFamilyByName(
+  normalizedName,
+  ruleProfile = RULE_PROFILE_GENERIC,
+  {
+    includeWorldRules = false,
+  } = {}
+) {
   const cleanName = normalizeName(normalizedName)
   const matches = []
 
-  for (const rule of IMAGE_FAMILY_RULES) {
+  for (const rule of getRulesForProfile(ruleProfile, { includeWorldRules })) {
     for (const alias of rule.aliases) {
       if (matchesAlias(cleanName, alias)) {
         matches.push({
@@ -311,19 +404,47 @@ export function detectExactSize(width, height, context = {}) {
   if (!width || !height) return null
 
   return selectBestSizeCandidate(
-    getExactSizeCandidates(width, height),
+    getExactSizeCandidatesForProfile(
+      width,
+      height,
+      context.ruleProfile || RULE_PROFILE_GENERIC
+      ,
+      {
+        includeWorldRules: Boolean(context.includeWorldRules),
+      }
+    ),
     context
   )
 }
 
 export function getExactSizeCandidates(width, height) {
+  return getExactSizeCandidatesForProfile(width, height, RULE_PROFILE_GENERIC)
+}
+
+export function getExactSizeCandidatesForProfile(
+  width,
+  height,
+  ruleProfile = RULE_PROFILE_GENERIC
+  ,
+  {
+    includeWorldRules = false,
+  } = {}
+) {
   if (!width || !height) return []
 
-  return IMAGE_FAMILY_RULES.flatMap((rule) =>
+  const tolerance =
+    ruleProfile === "cyberday" ? CYBERDAY_SIZE_TOLERANCE : 0
+
+  return getRulesForProfile(ruleProfile, { includeWorldRules }).flatMap((rule) =>
     rule.sizes
-      .filter((candidate) => candidate.width === width && candidate.height === height)
+      .filter((candidate) =>
+        Math.abs(candidate.width - width) <= tolerance &&
+        Math.abs(candidate.height - height) <= tolerance
+      )
       .map((size) => ({
         family: rule.family,
+        componentFamily: rule.componentFamily || null,
+        isWorld: Boolean(rule.isWorld),
         version: size.version,
         width: size.width,
         height: size.height,
@@ -337,10 +458,18 @@ export function getExactSizeCandidates(width, height) {
 export function detectByRatio(width, height, context = {}) {
   if (!width || !height) return null
 
+  const ruleProfile = context.ruleProfile || RULE_PROFILE_GENERIC
   const ratio = width / height
-  const candidates = IMAGE_FAMILY_RULES.flatMap((rule) =>
+  const candidates = getRulesForProfile(
+    ruleProfile,
+    {
+      includeWorldRules: Boolean(context.includeWorldRules),
+    }
+  ).flatMap((rule) =>
     rule.sizes.map((size) => ({
       family: rule.family,
+      componentFamily: rule.componentFamily || null,
+      isWorld: Boolean(rule.isWorld),
       version: size.version,
       width: size.width,
       height: size.height,
@@ -381,6 +510,8 @@ export function detectByRatio(width, height, context = {}) {
 
   return {
     family: resolvedBest.family,
+    componentFamily: resolvedBest.componentFamily,
+    isWorld: resolvedBest.isWorld,
     version: resolvedBest.version,
     width: resolvedBest.width,
     height: resolvedBest.height,
@@ -443,6 +574,45 @@ function selectBestSizeCandidate(candidates, context = {}) {
   )[0]
 }
 
+function resolveCyberdayWorldSizeMatch(match, width, height, context = {}) {
+  if (
+    context.ruleProfile !== RULE_PROFILE_CYBERDAY ||
+    !context.includeWorldRules ||
+    !width ||
+    !height
+  ) {
+    return match
+  }
+
+  const worldCandidates = getExactSizeCandidatesForProfile(
+    width,
+    height,
+    RULE_PROFILE_CYBERDAY,
+    {
+      includeWorldRules: true,
+    }
+  )
+    .filter((candidate) => candidate.isWorld)
+
+  if (worldCandidates.length === 0) return match
+
+  const preferredVersionCandidates = context.nameVersion
+    ? worldCandidates.filter((candidate) => candidate.version === context.nameVersion)
+    : []
+  const scopedCandidates =
+    preferredVersionCandidates.length > 0
+      ? preferredVersionCandidates
+      : worldCandidates
+
+  return [...scopedCandidates].sort(
+    (a, b) => (b.evidence || 0) - (a.evidence || 0)
+  )[0]
+}
+
+function isWorldBaseFamily(family) {
+  return ["BOX", "AUX", "MARCA"].includes(family)
+}
+
 function matchesAlias(cleanName, alias) {
   const cleanAlias = normalizeName(alias)
 
@@ -473,6 +643,7 @@ function buildResult({
   ratio,
   nameFamily,
   sizeFamily,
+  exactSizeMatch,
   finalFamily,
   nameVersion,
   sizeVersion,
@@ -480,13 +651,27 @@ function buildResult({
   confidence,
   status,
   reasons,
+  ruleProfile,
 }) {
+  const componentFamily =
+    exactSizeMatch?.componentFamily ||
+    getRulesForProfile(
+      ruleProfile,
+      {
+        includeWorldRules: true,
+      }
+    ).find((rule) => rule.family === finalFamily)
+      ?.componentFamily ||
+    null
+
   return {
     fileName,
     nameFamily,
     sizeFamily,
     finalFamily,
-    defaultPiece: getDefaultPieceForFamily(finalFamily),
+    componentFamily,
+    isWorldFamily: isWorldFamily(finalFamily),
+    defaultPiece: getDefaultPieceForProfile(finalFamily, ruleProfile),
     version,
     format: versionToFormat(version),
     width,
@@ -498,6 +683,7 @@ function buildResult({
     reasons: dedupeReasons(reasons),
     nameVersion,
     sizeVersion,
+    ruleProfile,
   }
 }
 
@@ -512,4 +698,3 @@ function escapeRegex(value) {
 function dedupeReasons(reasons) {
   return [...new Set(reasons.filter(Boolean))]
 }
-

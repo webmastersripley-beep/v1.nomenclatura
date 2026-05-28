@@ -1,6 +1,7 @@
 import { buildFinalName } from "@/utils/buildFinalName"
 import { getFolderForPiece } from "@/utils/cyberNomenclatureRules"
 import { resolveDuplicateFinalNames } from "@/utils/resolveDuplicateFinalNames"
+import { isWorldFamily } from "@/utils/worldRules"
 
 export async function fakeAiProcessor(
   families,
@@ -134,6 +135,40 @@ export async function fakeAiProcessor(
         detectedVersion:
           file.detectedVersion || null,
 
+        ruleProfile:
+          file.ruleProfile || config.ruleProfile || "generic",
+
+        worldMode:
+          Boolean(file.worldMode || config.worldMode),
+
+        componentFamily:
+          file.componentFamily || null,
+
+        isWorldFamily:
+          Boolean(file.isWorldFamily || isWorldFamily(file.finalFamily)),
+
+        worldCode:
+          file.worldCode || "",
+
+        worldName:
+          file.worldName || "",
+
+        worldFolder:
+          file.worldFolder || "",
+
+        worldConfidence:
+          file.worldConfidence || "",
+
+        worldStatus:
+          file.isWorldFamily || isWorldFamily(file.finalFamily)
+            ? "REVISION_MANUAL"
+            : "",
+
+        worldReasons:
+          file.isWorldFamily || isWorldFamily(file.finalFamily)
+            ? ["IA desactivada; mundo requiere revision"]
+            : [],
+
         familyClassification:
           file.familyClassification || null,
 
@@ -141,7 +176,10 @@ export async function fakeAiProcessor(
 
         finalName,
 
-        status: "detected",
+        status:
+          file.isWorldFamily || isWorldFamily(file.finalFamily)
+            ? "review"
+            : "detected",
       }
     })
   })

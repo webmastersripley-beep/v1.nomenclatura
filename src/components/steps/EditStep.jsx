@@ -6,12 +6,20 @@ import ImageModal from "@/components/common/ImageModal"
 import { analyzeImageWithGemini } from "@/services/geminiService"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
+import {
+  buildWorldPiece,
+  getWorldFamilyForComponentFamily,
+  getWorldZipFolder,
+  isWorldFamily,
+  resolveWorldFromSignals,
+} from "@/utils/worldRules"
 
 const EMPTY_RESULTS = []
 
 export default function EditStep({ onBack, onNext }) {
   const results = useNomenclaturaStore((state) => state.results) || EMPTY_RESULTS
   const updateResult = useNomenclaturaStore((state) => state.updateResult)
+  const updateResultPatch = useNomenclaturaStore((state) => state.updateResultPatch)
   const renameFamily = useNomenclaturaStore((state) => state.renameFamily)
   const renameResultFamily = useNomenclaturaStore((state) => state.renameResultFamily)
   const defaultConfig = useNomenclaturaStore((state) => state.defaultConfig)
@@ -60,21 +68,9 @@ export default function EditStep({ onBack, onNext }) {
 
   const applyAiResultToFamily = (family, result) => {
     family.items.forEach((item) => {
-      if (result.category) {
-        updateResult(item.id, "category", result.category)
-      }
+      const patch = buildAiPatch(item, result)
 
-      if (result.brand) {
-        updateResult(item.id, "brand", result.brand)
-      }
-
-      if (result.product) {
-        updateResult(item.id, "product", result.product)
-      }
-
-      if (Array.isArray(result.tags)) {
-        updateResult(item.id, "tags", result.tags)
-      }
+      updateResultPatch(item.id, patch)
     })
   }
 
@@ -180,6 +176,7 @@ export default function EditStep({ onBack, onNext }) {
               defaultConfig={defaultConfig}
               updateResult={updateResult}
               updateFamilyField={updateFamilyField}
+              updateResultPatch={updateResultPatch}
               onRenameFamily={(nextPiece) => {
                 renameFamily(family.familyId, nextPiece)
                 renameResultFamily(family.familyId, nextPiece)
@@ -227,6 +224,7 @@ function FamilyCard({
   defaultConfig,
   updateResult,
   updateFamilyField,
+  updateResultPatch,
   onRenameFamily,
   setSelectedImage,
   isActive,
@@ -243,6 +241,14 @@ function FamilyCard({
     "category"
   const descriptorFields =
     getDescriptorFields(descriptorMode)
+  const categorySuggestions = buildCategorySuggestions(firstItem)
+  const applyCategorySuggestion = (value) => {
+    family.items.forEach((item) => {
+      updateResultPatch(item.id, {
+        category: value,
+      })
+    })
+  }
 
   const openImage = (item) => {
     setSelectedImage({
@@ -349,20 +355,50 @@ function FamilyCard({
           <div className="mt-4 bg-zinc-900 rounded-xl border border-zinc-800 p-3">
             <p className="text-xs text-zinc-500 mb-2">Metadata IA</p>
 
-            <p className="text-sm text-zinc-300">
-              Marca: {firstItem.brand || "sin detectar"}
-            </p>
+            <MetadataLine
+              label="Categoria"
+              value={firstItem.category}
+              onPick={applyCategorySuggestion}
+            />
 
-            <p className="text-sm text-zinc-300 mt-1">
-              Producto: {firstItem.product || "sin detectar"}
-            </p>
+            <MetadataLine
+              label="Marca"
+              value={firstItem.brand}
+              onPick={applyCategorySuggestion}
+            />
 
-            <p className="text-sm text-zinc-300 mt-1">
-              Tags:{" "}
-              {Array.isArray(firstItem.tags) && firstItem.tags.length > 0
-                ? firstItem.tags.join(", ")
-                : "sin tags"}
-            </p>
+            <MetadataLine
+              label="Producto"
+              value={firstItem.product}
+              onPick={applyCategorySuggestion}
+            />
+
+            <div className="mt-2">
+              <p className="text-xs text-zinc-500">Tags</p>
+              {categorySuggestions.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {categorySuggestions.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => applyCategorySuggestion(tag)}
+                      className="rounded-full border border-zinc-700 bg-black px-3 py-1 text-xs font-semibold text-zinc-200 transition hover:border-white/40 hover:text-white"
+                      title="Usar como categoria"
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 text-sm text-zinc-500">sin tags</p>
+              )}
+            </div>
+
+            {firstItem.worldStatus && (
+              <p className="mt-2 text-xs text-cyan-200">
+                Mundo: {firstItem.worldName || "revision manual"} · {firstItem.worldConfidence || "sin confianza"}
+              </p>
+            )}
 
             {firstItem.duplicateResolved && (
               <p className="mt-2 text-xs text-emerald-300">
@@ -479,6 +515,101 @@ function Field({ label, value, onChange }) {
       />
     </label>
   )
+}
+
+function MetadataLine({ label, value, onPick }) {
+  const cleanValue = String(value || "").trim()
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-zinc-300">
+      <span className="text-zinc-500">{label}:</span>
+      {cleanValue ? (
+        <button
+          type="button"
+          onClick={() => onPick(cleanValue)}
+          className="rounded-full border border-zinc-700 bg-black px-3 py-1 text-xs font-semibold text-zinc-200 transition hover:border-white/40 hover:text-white"
+          title="Usar como categoria"
+        >
+          {cleanValue}
+        </button>
+      ) : (
+        <span className="text-zinc-500">sin detectar</span>
+      )}
+    </div>
+  )
+}
+
+function buildCategorySuggestions(item) {
+  return [
+    item.category,
+    item.product,
+    item.brand,
+    ...(Array.isArray(item.tags) ? item.tags : []),
+  ]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index)
+}
+
+function buildAiPatch(item, result) {
+  const patch = {
+    category: result.category || "",
+    brand: result.brand || "",
+    product: result.product || "",
+    tags: Array.isArray(result.tags) ? result.tags : [],
+  }
+
+  const targetWorldFamily = getTargetWorldFamily(item)
+
+  if (!targetWorldFamily) return patch
+
+  const worldResult = resolveWorldFromSignals({
+    world: result.world,
+    category: result.category,
+    product: result.product,
+    brand: result.brand,
+    tags: result.tags,
+    originalName: item.originalName,
+  })
+
+  patch.worldCode = worldResult.worldCode
+  patch.worldName = worldResult.worldName
+  patch.worldFolder = worldResult.worldFolder
+  patch.worldConfidence = worldResult.worldConfidence
+  patch.worldStatus = worldResult.worldStatus
+  patch.worldReasons = worldResult.worldReasons
+  patch.worldCandidates = worldResult.worldCandidates
+
+  if (worldResult.worldCode) {
+    const worldPiece = buildWorldPiece({
+      worldCode: worldResult.worldCode,
+      worldFamily: targetWorldFamily,
+      piece: item.piece,
+    })
+    const folderGroup = item.folderGroup || ""
+
+    patch.piece = worldPiece
+    patch.finalFamily = targetWorldFamily
+    patch.componentFamily = item.componentFamily || item.finalFamily
+    patch.isWorldFamily = true
+    patch.zipFolder = getWorldZipFolder({
+      worldCode: worldResult.worldCode,
+      worldFolder: worldResult.worldFolder,
+      folderGroup,
+    })
+  }
+
+  return patch
+}
+
+function getTargetWorldFamily(item) {
+  if (item.isWorldFamily || isWorldFamily(item.finalFamily)) {
+    return item.finalFamily
+  }
+
+  if (item.ruleProfile !== "cyberday" || !item.worldMode) return ""
+
+  return getWorldFamilyForComponentFamily(item.finalFamily)
 }
 
 function getDescriptorFields(descriptorMode = "category") {
