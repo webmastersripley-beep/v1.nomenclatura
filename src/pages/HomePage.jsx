@@ -23,9 +23,6 @@ import { defaultPreferences, useUserStore } from "@/store/useUserStore"
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts"
 import {
   RULE_PROFILE_AUTO,
-  RULE_PROFILE_CYBERDAY,
-  RULE_PROFILE_GENERIC,
-  RULE_PROFILE_LABELS,
   resolveRuleProfile,
 } from "@/utils/ruleProfiles"
 
@@ -71,6 +68,23 @@ export default function HomePage() {
   const [campaignSelectorMode, setCampaignSelectorMode] = useState("process")
   const [campaignBootstrapKey, setCampaignBootstrapKey] = useState("")
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const startupCountry =
+    effectivePreferences.default_country ||
+    defaultConfig.country ||
+    "cl"
+  const startupFallbackCampaign =
+    effectivePreferences.default_campaign ||
+    "hg"
+  const startupCampaignKey = [
+    user?.id || "anon",
+    currentStep,
+    effectivePreferences.use_active_campaigns ? "active" : "manual",
+    startupCountry,
+    startupFallbackCampaign,
+  ].join("|")
+  const isStartupCampaignReady =
+    currentStep !== "upload" ||
+    (campaignBootstrapKey === startupCampaignKey && !showCampaignSelector)
   const effectiveRuleProfile = resolveRuleProfile(
     defaultConfig.ruleProfile || RULE_PROFILE_AUTO,
     defaultConfig.campaign
@@ -81,15 +95,21 @@ export default function HomePage() {
       setSelectedCampaign(null)
     }
 
-    setDefaultConfig({
+    const nextConfig = {
       country: effectivePreferences.default_country || "cl",
-      campaign: effectivePreferences.default_campaign || "hg",
       descriptorMode: effectiveDescriptorMode,
-    })
+    }
+
+    if (!user || !effectivePreferences.use_active_campaigns) {
+      nextConfig.campaign = effectivePreferences.default_campaign || "hg"
+    }
+
+    setDefaultConfig(nextConfig)
   }, [
     user,
     effectivePreferences.default_country,
     effectivePreferences.default_campaign,
+    effectivePreferences.use_active_campaigns,
     effectiveDescriptorMode,
     setDefaultConfig,
     setSelectedCampaign,
@@ -125,22 +145,10 @@ export default function HomePage() {
   ])
 
   useEffect(() => {
-    const country =
-      effectivePreferences.default_country ||
-      defaultConfig.country ||
-      "cl"
-    const fallbackCampaign =
-      effectivePreferences.default_campaign ||
-      "hg"
-    const bootstrapKey = [
-      user?.id || "anon",
-      currentStep,
-      effectivePreferences.use_active_campaigns ? "active" : "manual",
-      country,
-      fallbackCampaign,
-    ].join("|")
-
-    if (currentStep !== "upload" || campaignBootstrapKey === bootstrapKey) {
+    if (
+      currentStep !== "upload" ||
+      campaignBootstrapKey === startupCampaignKey
+    ) {
       return
     }
 
@@ -151,30 +159,30 @@ export default function HomePage() {
         setActiveCampaigns([])
         setSelectedCampaign(null)
         setDefaultConfig({
-          country,
-          campaign: fallbackCampaign,
+          country: startupCountry,
+          campaign: startupFallbackCampaign,
           descriptorMode: effectiveDescriptorMode,
         })
-        setCampaignBootstrapKey(bootstrapKey)
+        setCampaignBootstrapKey(startupCampaignKey)
         return
       }
 
       try {
-        const campaigns = await getActiveCampaigns(country)
+        const campaigns = await getActiveCampaigns(startupCountry)
 
         if (cancelled) return
 
         setActiveCampaigns(campaigns)
-        setCampaignBootstrapKey(bootstrapKey)
+        setCampaignBootstrapKey(startupCampaignKey)
 
         if (campaigns.length === 0) {
           setSelectedCampaign(null)
           setDefaultConfig({
-            country,
-            campaign: fallbackCampaign,
+            country: startupCountry,
+            campaign: startupFallbackCampaign,
             descriptorMode: effectiveDescriptorMode,
           })
-          toast.info(`No hay campanas activas. Se usara ${fallbackCampaign}`)
+          toast.info(`No hay campanas activas. Se usara ${startupFallbackCampaign}`)
           return
         }
 
@@ -183,7 +191,7 @@ export default function HomePage() {
 
           setSelectedCampaign(campaign)
           setDefaultConfig({
-            country,
+            country: startupCountry,
             campaign: campaign.code,
             descriptorMode: effectiveDescriptorMode,
           })
@@ -200,11 +208,11 @@ export default function HomePage() {
         setActiveCampaigns([])
         setSelectedCampaign(null)
         setDefaultConfig({
-          country,
-          campaign: fallbackCampaign,
+          country: startupCountry,
+          campaign: startupFallbackCampaign,
           descriptorMode: effectiveDescriptorMode,
         })
-        setCampaignBootstrapKey(bootstrapKey)
+        setCampaignBootstrapKey(startupCampaignKey)
         toast.error("No se pudieron leer las campanas activas")
       }
     }
@@ -217,14 +225,14 @@ export default function HomePage() {
   }, [
     campaignBootstrapKey,
     currentStep,
-    defaultConfig.country,
     effectiveDescriptorMode,
-    effectivePreferences.default_campaign,
-    effectivePreferences.default_country,
     effectivePreferences.use_active_campaigns,
     setActiveCampaigns,
     setDefaultConfig,
     setSelectedCampaign,
+    startupCampaignKey,
+    startupCountry,
+    startupFallbackCampaign,
     user,
   ])
 
@@ -627,23 +635,17 @@ export default function HomePage() {
         />
 
         {currentStep === "upload" && (
-
-          <div className="space-y-5">
-            <RuleProfileSelector
-              value={defaultConfig.ruleProfile || RULE_PROFILE_AUTO}
-              effectiveValue={effectiveRuleProfile}
-              campaign={defaultConfig.campaign}
-              selectedCampaign={selectedCampaign}
-              worldMode={Boolean(defaultConfig.worldMode)}
-              onChange={(ruleProfile) => setDefaultConfig({ ruleProfile })}
-            />
-
-            <ImageUploader
-              onFilesReady={
-                handleFilesReady
-              }
-            />
-          </div>
+          <ImageUploader
+            disabled={!isStartupCampaignReady}
+            statusText={
+              isStartupCampaignReady
+                ? ""
+                : "Preparando campana activa..."
+            }
+            onFilesReady={
+              handleFilesReady
+            }
+          />
         )}
 
         {currentStep === "review" && (
@@ -737,55 +739,6 @@ function WorldModeToggle({ active, onToggle }) {
     >
       Mundos
     </button>
-  )
-}
-
-function RuleProfileSelector({
-  value,
-  effectiveValue,
-  campaign,
-  selectedCampaign,
-  worldMode,
-  onChange,
-}) {
-  const options = [
-    RULE_PROFILE_AUTO,
-    RULE_PROFILE_GENERIC,
-    RULE_PROFILE_CYBERDAY,
-  ]
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/70 p-4">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
-          Perfil de reglas
-        </p>
-        <p className="mt-1 text-sm text-zinc-300">
-          Activo: {RULE_PROFILE_LABELS[effectiveValue] || effectiveValue}
-        </p>
-        <p className="mt-1 text-xs text-zinc-500">
-          Campana: {selectedCampaign?.name || campaign || "-"} · Mundos:{" "}
-          {worldMode ? "activo" : "inactivo"}
-        </p>
-      </div>
-
-      <div className="inline-flex rounded-xl border border-zinc-800 bg-black p-1">
-        {options.map((option) => (
-          <button
-            key={option}
-            type="button"
-            onClick={() => onChange(option)}
-            className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
-              value === option
-                ? "bg-white text-black"
-                : "text-zinc-400 hover:bg-zinc-900 hover:text-white"
-            }`}
-          >
-            {RULE_PROFILE_LABELS[option]}
-          </button>
-        ))}
-      </div>
-    </div>
   )
 }
 

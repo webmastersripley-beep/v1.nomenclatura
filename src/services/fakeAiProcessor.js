@@ -169,6 +169,9 @@ export async function fakeAiProcessor(
             ? ["IA desactivada; mundo requiere revision"]
             : [],
 
+        manualPieceOverride:
+          Boolean(file.manualPieceOverride),
+
         familyClassification:
           file.familyClassification || null,
 

@@ -11,6 +11,7 @@ import {
   getWorldFamilyForComponentFamily,
   getWorldZipFolder,
   isWorldFamily,
+  normalizeWorldDescriptor,
   resolveWorldFromSignals,
 } from "@/utils/worldRules"
 
@@ -243,9 +244,11 @@ function FamilyCard({
     getDescriptorFields(descriptorMode)
   const categorySuggestions = buildCategorySuggestions(firstItem)
   const applyCategorySuggestion = (value) => {
+    const normalizedValue = normalizeWorldDescriptor(value, firstItem.worldCode)
+
     family.items.forEach((item) => {
       updateResultPatch(item.id, {
-        category: value,
+        category: normalizeWorldDescriptor(normalizedValue, item.worldCode),
       })
     })
   }
@@ -581,6 +584,14 @@ function buildAiPatch(item, result) {
   patch.worldCandidates = worldResult.worldCandidates
 
   if (worldResult.worldCode) {
+    patch.category = normalizeWorldDescriptor(
+      patch.category,
+      worldResult.worldCode
+    )
+  }
+
+  if (worldResult.worldCode && !item.manualPieceOverride) {
+
     const worldPiece = buildWorldPiece({
       worldCode: worldResult.worldCode,
       worldFamily: targetWorldFamily,

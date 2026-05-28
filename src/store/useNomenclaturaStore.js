@@ -49,7 +49,7 @@ export const useNomenclaturaStore = create((set) => ({
   renameFamily: (familyId, nextPiece) =>
     set((state) => {
       const family = state.families.find((item) => item.familyId === familyId)
-      const identity = resolvePieceIdentity(nextPiece, family)
+      const identity = resolveManualPieceIdentity(nextPiece, family)
 
       if (!family || !identity.piece || identity.piece === family.piece) {
         return state
@@ -61,6 +61,7 @@ export const useNomenclaturaStore = create((set) => ({
         piece: identity.piece,
         folderGroup: identity.folderGroup,
         isPlaceholder: false,
+        manualPieceOverride: true,
       }
 
       return {
@@ -75,6 +76,7 @@ export const useNomenclaturaStore = create((set) => ({
               piece: identity.piece,
               familyKey: familyPatch.familyKey,
               folderGroup: identity.folderGroup,
+              manualPieceOverride: true,
             })),
           }
         }),
@@ -86,6 +88,7 @@ export const useNomenclaturaStore = create((set) => ({
             piece: identity.piece,
             familyKey: familyPatch.familyKey,
             folderGroup: identity.folderGroup,
+            manualPieceOverride: true,
           }
         }),
       }
@@ -94,7 +97,7 @@ export const useNomenclaturaStore = create((set) => ({
     set((state) => {
       const familyItems = state.results.filter((item) => item.familyId === familyId)
       const firstItem = familyItems[0]
-      const identity = resolvePieceIdentity(nextPiece, firstItem)
+      const identity = resolveManualPieceIdentity(nextPiece, firstItem)
 
       if (!firstItem || !identity.piece || identity.piece === firstItem.piece) {
         return state
@@ -107,6 +110,7 @@ export const useNomenclaturaStore = create((set) => ({
           ...item,
           piece: identity.piece,
           folderGroup: identity.folderGroup,
+          manualPieceOverride: true,
         }
 
         updatedItem.finalName = buildFinalName(
@@ -415,8 +419,22 @@ setDefaultConfig:
       const updatedResults = state.results.map((item) => {
         if (item.id !== id) return item
 
+        const patchEntries = Object.entries(patch || {}).filter(([field]) => {
+          if (!item.manualPieceOverride) return true
+
+          return ![
+            "piece",
+            "finalFamily",
+            "componentFamily",
+            "isWorldFamily",
+            "folderGroup",
+            "zipFolder",
+          ].includes(field)
+        })
+
         const cleanPatch = Object.fromEntries(
-          Object.entries(patch || {}).map(([field, value]) => {
+          patchEntries.map(([field, value]) => {
+            if (field === "manualPieceOverride") return [field, Boolean(value)]
             if (field === "worldCandidates") return [field, value]
             if (["finalFamily", "componentFamily", "isWorldFamily"].includes(field)) {
               return [field, value]
@@ -551,27 +569,29 @@ function resolveTargetFamilyIdentity(family, file) {
   }
 }
 
-function resolvePieceIdentity(piece, fallback = {}) {
+function resolveManualPieceIdentity(piece, fallback = {}) {
   const cleanPiece = sanitizeValue(piece)
 
   if (!cleanPiece) {
     return {
       piece: "",
       basePiece: "",
-      folderGroup: "",
+      folderGroup: fallback.folderGroup || "manuales",
     }
   }
 
   const component = normalizeCyberComponent(cleanPiece)
-  const resolvedPiece = component?.piece || cleanPiece
-  const basePiece = component?.basePiece || resolvedPiece
+  const basePiece =
+    component?.basePiece ||
+    cleanPiece.replace(/\d+$/, "") ||
+    cleanPiece
   const folderGroup =
     component?.folderGroup ||
     fallback.folderGroup ||
-    getFolderForPiece(resolvedPiece, fallback.finalFamily)
+    getFolderForPiece(cleanPiece, fallback.finalFamily)
 
   return {
-    piece: resolvedPiece,
+    piece: cleanPiece,
     basePiece,
     folderGroup,
   }

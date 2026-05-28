@@ -33,7 +33,19 @@ export const WORLD_RULES = [
       "mte",
       "tecno",
       "mundo-electro",
+      "mundo-tecno",
+      "mundo-tecnologia",
+      "mundo-electro-hogar",
+      "mundo-tecno-electro-hogar",
+      "electronicos",
       "electrodomesticos",
+      "electro-hogar",
+      "hogar",
+      "climatizacion",
+      "aire-acondicionado",
+      "ventilacion",
+      "calefaccion",
+      "linea-blanca",
       "telefonia",
       "smartphone",
       "smartphones",
@@ -190,6 +202,42 @@ export function resolveWorldFromSignals(signals = {}) {
   }
 }
 
+export function normalizeWorldDescriptor(value = "", worldCode = "") {
+  const cleanValue = sanitizeValue(value)
+  const rule = getWorldRuleByCode(worldCode) || getWorldRuleByDescriptor(cleanValue)
+
+  if (!rule) return cleanValue
+
+  if (rule.code !== "mte") {
+    return cleanValue.startsWith("mundo-")
+      ? `mundo-${rule.folder}`
+      : cleanValue
+  }
+
+  const broadTecnoTerms = new Set([
+    "mundo-tecno",
+    "mundo-tecnologia",
+    "mundo-electro",
+    "mundo-electro-hogar",
+    "mundo-tecno-electro-hogar",
+    "tecnologia",
+    "electronicos",
+    "electro",
+    "electrodomesticos",
+    "electro-hogar",
+    "hogar",
+  ])
+
+  if (
+    cleanValue.startsWith("mundo-") ||
+    broadTecnoTerms.has(cleanValue)
+  ) {
+    return "mundo-tecno"
+  }
+
+  return cleanValue
+}
+
 export function buildWorldPiece({
   worldCode,
   worldFamily,
@@ -236,6 +284,20 @@ function buildWorldSignalText(signals = {}) {
     .map((value) => sanitizeValue(value || ""))
     .filter(Boolean)
     .join(" ")
+}
+
+function getWorldRuleByDescriptor(value = "") {
+  const cleanValue = sanitizeValue(value)
+
+  if (!cleanValue) return null
+
+  return WORLD_RULES.find((rule) =>
+    rule.terms.some((term) => {
+      const cleanTerm = sanitizeValue(term)
+
+      return cleanValue === cleanTerm || cleanValue.includes(cleanTerm)
+    })
+  ) || null
 }
 
 function toWorldCandidate(rule) {

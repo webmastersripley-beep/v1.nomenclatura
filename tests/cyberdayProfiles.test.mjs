@@ -9,6 +9,7 @@ import {
 } from "../src/utils/ruleProfiles.js"
 import {
   buildWorldPiece,
+  normalizeWorldDescriptor,
   resolveWorldFromSignals,
 } from "../src/utils/worldRules.js"
 import { buildZipEntryPath } from "../src/utils/buildZipEntries.js"
@@ -117,6 +118,24 @@ assert.equal(
     tags: ["smartphone", "computacion"],
   }).worldCode,
   "mte"
+)
+
+assert.equal(
+  resolveWorldFromSignals({
+    category: "mundo tecno electro hogar",
+    tags: ["hogar", "electrodomesticos"],
+  }).worldCode,
+  "mte"
+)
+
+assert.equal(
+  normalizeWorldDescriptor("mundo tecno-electro-hogar", "mte"),
+  "mundo-tecno"
+)
+
+assert.equal(
+  normalizeWorldDescriptor("electrodomesticos", "mte"),
+  "mundo-tecno"
 )
 
 assert.equal(

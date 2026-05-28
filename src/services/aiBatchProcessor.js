@@ -8,6 +8,7 @@ import {
   getWorldFamilyForComponentFamily,
   getWorldZipFolder,
   isWorldFamily,
+  normalizeWorldDescriptor,
   resolveWorldFromSignals,
 } from "@/utils/worldRules"
 
@@ -183,6 +184,7 @@ function buildBaseResult(family, file, config) {
     worldConfidence: file.worldConfidence || "",
     worldStatus: file.worldStatus || "",
     worldReasons: file.worldReasons || [],
+    manualPieceOverride: Boolean(file.manualPieceOverride),
     familyClassification: file.familyClassification || null,
     piece: file.piece || family.piece || "manual",
     format: file.format || file.detectedFormat || "manual",
@@ -246,10 +248,13 @@ function applyAiResult(item, result) {
     product,
     tags,
   })
+  const finalCategory = worldPatch.worldCode
+    ? normalizeWorldDescriptor(category, worldPatch.worldCode)
+    : category
 
   const updatedItem = {
     ...item,
-    category,
+    category: finalCategory,
     brand,
     product,
     tags,
@@ -294,7 +299,7 @@ function resolveWorldPatch(item, result) {
     worldCandidates: worldResult.worldCandidates,
   }
 
-  if (!worldResult.worldCode) return basePatch
+  if (!worldResult.worldCode || item.manualPieceOverride) return basePatch
 
   const worldPiece = buildWorldPiece({
     worldCode: worldResult.worldCode,

@@ -40,6 +40,7 @@ assert.equal(renamedFamily.basePiece, "aux")
 assert.equal(renamedFamily.folderGroup, "box-auxiliares")
 assert.equal(renamedFamily.files[0].piece, "aux1")
 assert.equal(renamedFamily.files[0].folderGroup, "box-auxiliares")
+assert.equal(renamedFamily.files[0].manualPieceOverride, true)
 
 store.getState().setResults([
   {
@@ -67,5 +68,26 @@ assert.equal(
   renamedResult.finalName,
   "marca1-desk-prueba-calzado-270526-cl.webp"
 )
+assert.equal(renamedResult.manualPieceOverride, true)
+
+store.getState().updateResultPatch("result-1", {
+  piece: "mte-bx1",
+  finalFamily: "MUNDO_BOX",
+  componentFamily: "BOX",
+  isWorldFamily: true,
+  folderGroup: "boxs",
+  zipFolder: "tecno/boxs",
+  category: "mundo tecno",
+})
+
+const protectedResult = store.getState().results[0]
+
+assert.equal(protectedResult.piece, "marca1")
+assert.equal(protectedResult.finalFamily, undefined)
+assert.equal(protectedResult.componentFamily, undefined)
+assert.equal(protectedResult.isWorldFamily, undefined)
+assert.equal(protectedResult.folderGroup, "marcas")
+assert.equal(protectedResult.zipFolder, undefined)
+assert.equal(protectedResult.category, "mundo-tecno")
 
 console.log("rename family store ok")

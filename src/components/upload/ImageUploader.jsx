@@ -9,12 +9,18 @@ import { classifyImageFamily } from "@/utils/classifyImageFamily"
 import { useNomenclaturaStore } from "@/store/useNomenclaturaStore"
 import { resolveRuleProfile } from "@/utils/ruleProfiles"
 
-export default function ImageUploader({ onFilesReady }) {
+export default function ImageUploader({
+  onFilesReady,
+  disabled = false,
+  statusText = "",
+}) {
   const folderInputRef = useRef(null)
   const defaultConfig = useNomenclaturaStore((state) => state.defaultConfig)
   const [isPreparing, setIsPreparing] = useState(false)
 
   const prepareFiles = async (acceptedFiles) => {
+    if (disabled) return
+
     setIsPreparing(true)
 
     const imageFiles = acceptedFiles.filter((file) =>
@@ -115,7 +121,7 @@ export default function ImageUploader({ onFilesReady }) {
       "image/jpeg": [".jpg", ".jpeg"],
     },
     onDrop,
-    disabled: isPreparing,
+    disabled: isPreparing || disabled,
   })
 
   return (
@@ -126,6 +132,8 @@ export default function ImageUploader({ onFilesReady }) {
           cursor-pointer rounded-3xl border-2 border-dashed p-24 text-center transition
           ${isPreparing
             ? "cursor-wait border-zinc-800 bg-zinc-950"
+            : disabled
+            ? "cursor-not-allowed border-zinc-800 bg-zinc-950/70 opacity-70"
             : isDragActive
             ? "border-white bg-zinc-900"
             : "border-zinc-700 hover:border-zinc-500"
@@ -143,7 +151,7 @@ export default function ImageUploader({ onFilesReady }) {
             </p>
 
             <p className="mt-2 text-zinc-500">
-              o haz click para seleccionar archivos
+              {statusText || "o haz click para seleccionar archivos"}
             </p>
           </div>
         </div>
@@ -162,11 +170,15 @@ export default function ImageUploader({ onFilesReady }) {
       <button
         type="button"
         onClick={() => folderInputRef.current?.click()}
-        disabled={isPreparing}
-        className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800"
+        disabled={isPreparing || disabled}
+        className="inline-flex items-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <FolderOpen size={18} />
-        {isPreparing ? "Analizando..." : "Seleccionar carpeta"}
+        {isPreparing
+          ? "Analizando..."
+          : disabled
+          ? "Preparando campana"
+          : "Seleccionar carpeta"}
       </button>
     </div>
   )
