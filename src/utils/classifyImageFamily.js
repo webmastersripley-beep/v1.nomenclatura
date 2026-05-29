@@ -31,15 +31,19 @@ export function classifyImageFamily({
   const ratio = cleanWidth && cleanHeight
     ? roundRatio(cleanWidth / cleanHeight)
     : null
+  const ignoreNameSignals =
+    effectiveRuleProfile === RULE_PROFILE_CYBERDAY
 
-  const nameFamily = detectFamilyByName(
+  const detectedNameFamily = detectFamilyByName(
     normalizedName,
     effectiveRuleProfile,
     {
       includeWorldRules: worldMode,
     }
   )
-  const nameVersion = detectVersionByName(normalizedName)
+  const detectedNameVersion = detectVersionByName(normalizedName)
+  const nameFamily = ignoreNameSignals ? null : detectedNameFamily
+  const nameVersion = ignoreNameSignals ? null : detectedNameVersion
   const exactSizeMatch = detectExactSize(
     cleanWidth,
     cleanHeight,
@@ -84,7 +88,9 @@ export function classifyImageFamily({
   const sizeVersion = resolvedExactSizeMatch?.version || null
   const reasons = []
 
-  if (nameFamily) {
+  if (ignoreNameSignals) {
+    reasons.push("perfil Cyberday clasifica por medidas; nombre ignorado")
+  } else if (nameFamily) {
     reasons.push(`nombre apunta a ${nameFamily}`)
   } else {
     reasons.push("nombre sin familia clara")

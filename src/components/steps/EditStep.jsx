@@ -20,6 +20,7 @@ const EMPTY_RESULTS = []
 export default function EditStep({ onBack, onNext }) {
   const results = useNomenclaturaStore((state) => state.results) || EMPTY_RESULTS
   const updateResult = useNomenclaturaStore((state) => state.updateResult)
+  const updateAllResults = useNomenclaturaStore((state) => state.updateAllResults)
   const updateResultPatch = useNomenclaturaStore((state) => state.updateResultPatch)
   const renameFamily = useNomenclaturaStore((state) => state.renameFamily)
   const renameResultFamily = useNomenclaturaStore((state) => state.renameResultFamily)
@@ -176,11 +177,17 @@ export default function EditStep({ onBack, onNext }) {
               family={family}
               defaultConfig={defaultConfig}
               updateResult={updateResult}
+              updateAllResults={updateAllResults}
               updateFamilyField={updateFamilyField}
               updateResultPatch={updateResultPatch}
               onRenameFamily={(nextPiece) => {
                 renameFamily(family.familyId, nextPiece)
                 renameResultFamily(family.familyId, nextPiece)
+              }}
+              onApplyComponentToAll={(nextPiece) => {
+                groupedFamilies.forEach((targetFamily) => {
+                  renameResultFamily(targetFamily.familyId, nextPiece)
+                })
               }}
               setSelectedImage={setSelectedImage}
               isActive={activeFamily?.familyId === family.familyId}
@@ -224,9 +231,11 @@ function FamilyCard({
   family,
   defaultConfig,
   updateResult,
+  updateAllResults,
   updateFamilyField,
   updateResultPatch,
   onRenameFamily,
+  onApplyComponentToAll,
   setSelectedImage,
   isActive,
   isExpanded,
@@ -313,11 +322,21 @@ function FamilyCard({
           </div>
 
           <div className="grid grid-cols-2 gap-3 mt-4 md:grid-cols-3 xl:grid-cols-6">
-            <Field
-              label="Componente"
-              value={firstItem.piece}
-              onChange={onRenameFamily}
-            />
+            <div className="space-y-2">
+              <Field
+                label="Componente"
+                value={firstItem.piece}
+                onChange={onRenameFamily}
+              />
+
+              <button
+                type="button"
+                onClick={() => onApplyComponentToAll(firstItem.piece)}
+                className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-[11px] font-semibold text-zinc-400 transition hover:border-zinc-600 hover:text-white"
+              >
+                Aplicar a todas
+              </button>
+            </div>
             <Field
               label="Campana"
               value={firstItem.campaign}
@@ -334,7 +353,7 @@ function FamilyCard({
             <Field
               label="Fecha"
               value={firstItem.date}
-              onChange={(value) => updateFamilyField(family, "date", value)}
+              onChange={(value) => updateAllResults("date", value)}
             />
             <Field
               label="Pais"

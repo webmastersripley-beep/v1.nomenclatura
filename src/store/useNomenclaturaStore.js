@@ -414,6 +414,40 @@ setDefaultConfig:
         results: resolveDuplicateFinalNames(updatedResults),
       }
     }),
+  updateAllResults: (field, value) =>
+    set((state) => {
+      const cleanValue =
+        Array.isArray(value)
+          ? sanitizeTags(value)
+          : sanitizeValue(value)
+
+      return {
+        results: resolveDuplicateFinalNames(state.results.map((item) => {
+          const updatedItem = {
+            ...item,
+            [field]: cleanValue,
+          }
+
+          updatedItem.finalName =
+            buildFinalName(
+              {
+                ...updatedItem,
+                category:
+                  updatedItem.category ||
+                  "manual",
+                date:
+                  updatedItem.date ||
+                  state.defaultConfig.date,
+              },
+              updatedItem.descriptorMode ||
+              state.defaultConfig.descriptorMode ||
+              "category"
+            )
+
+          return updatedItem
+        })),
+      }
+    }),
   updateResultPatch: (id, patch) =>
     set((state) => {
       const updatedResults = state.results.map((item) => {

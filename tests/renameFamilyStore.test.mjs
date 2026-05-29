@@ -90,4 +90,46 @@ assert.equal(protectedResult.folderGroup, "marcas")
 assert.equal(protectedResult.zipFolder, undefined)
 assert.equal(protectedResult.category, "mundo-tecno")
 
+store.getState().setResults([
+  {
+    id: "date-1",
+    familyId: "family-a",
+    originalName: "a.webp",
+    piece: "bx1",
+    format: "desk",
+    campaign: "cyber",
+    category: "hogar",
+    date: "280526",
+    country: "cl",
+    descriptorMode: "category",
+  },
+  {
+    id: "date-2",
+    familyId: "family-b",
+    originalName: "b.webp",
+    piece: "top1",
+    format: "desk",
+    campaign: "cyber",
+    category: "moda",
+    date: "280526",
+    country: "cl",
+    descriptorMode: "category",
+  },
+])
+
+store.getState().updateAllResults("date", "310526")
+
+const datedResults = store.getState().results
+
+assert.equal(datedResults[0].date, "310526")
+assert.equal(datedResults[1].date, "310526")
+assert.equal(
+  datedResults[0].finalName,
+  "bx1-desk-cyber-hogar-310526-cl.webp"
+)
+assert.equal(
+  datedResults[1].finalName,
+  "top1-desk-cyber-moda-310526-cl.webp"
+)
+
 console.log("rename family store ok")

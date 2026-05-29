@@ -27,6 +27,17 @@ assert.equal(
   "SLIDER"
 )
 
+const cyberIgnoresNameConflict = classifyImageFamily({
+  fileName: "cint-desk-mal-nombrado.webp",
+  width: 570,
+  height: 800,
+  ruleProfile: RULE_PROFILE_CYBERDAY,
+})
+
+assert.equal(cyberIgnoresNameConflict.nameFamily, null)
+assert.equal(cyberIgnoresNameConflict.finalFamily, "BOX")
+assert.equal(cyberIgnoresNameConflict.status, "PREDICCION_POR_TAMANO")
+
 assert.equal(
   classifyImageFamily({
     fileName: "imagen.webp",
