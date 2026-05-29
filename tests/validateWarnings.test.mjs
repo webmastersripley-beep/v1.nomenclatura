@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 
 import { validateWarnings } from "../src/utils/validateWarnings.js"
+import { RULE_PROFILE_CYBERDAY } from "../src/utils/ruleProfiles.js"
 
 const results = [
   {
@@ -48,6 +49,80 @@ assert.equal(
 assert.equal(
   warnings.filter((warning) => warning.id === "heavy-files").length,
   1
+)
+
+const cyberDeskOnlyWarnings = validateWarnings([
+  {
+    id: "top1-desk",
+    familyId: "top1",
+    piece: "top1",
+    format: "desk",
+    finalName: "top1-desk-cyber-hogar-290526-cl.webp",
+    category: "hogar",
+    descriptorMode: "category",
+    ruleProfile: RULE_PROFILE_CYBERDAY,
+  },
+])
+
+assert.equal(
+  cyberDeskOnlyWarnings.some((warning) => warning.message.includes("formatos")),
+  false
+)
+
+const cyberMobileReplacesAppWarnings = validateWarnings([
+  {
+    id: "sl-desk",
+    familyId: "sl",
+    piece: "sl",
+    format: "desk",
+    finalName: "sl-desk-cyber-tecnologia-290526-cl.webp",
+    category: "tecnologia",
+    descriptorMode: "category",
+    ruleProfile: RULE_PROFILE_CYBERDAY,
+  },
+  {
+    id: "sl-mb",
+    familyId: "sl",
+    piece: "sl",
+    format: "mb",
+    finalName: "sl-mb-cyber-tecnologia-290526-cl.webp",
+    category: "tecnologia",
+    descriptorMode: "category",
+    ruleProfile: RULE_PROFILE_CYBERDAY,
+  },
+])
+
+assert.equal(
+  cyberMobileReplacesAppWarnings.some((warning) => warning.message.includes("app")),
+  false
+)
+
+const cyberExplicitAppWarnings = validateWarnings([
+  {
+    id: "ol-desk",
+    familyId: "ol",
+    piece: "ol",
+    format: "desk",
+    finalName: "ol-desk-cyber-tecnologia-290526-cl.webp",
+    category: "tecnologia",
+    descriptorMode: "category",
+    ruleProfile: RULE_PROFILE_CYBERDAY,
+  },
+  {
+    id: "ol-mb",
+    familyId: "ol",
+    piece: "ol",
+    format: "mb",
+    finalName: "ol-mb-cyber-tecnologia-290526-cl.webp",
+    category: "tecnologia",
+    descriptorMode: "category",
+    ruleProfile: RULE_PROFILE_CYBERDAY,
+  },
+])
+
+assert.equal(
+  cyberExplicitAppWarnings.some((warning) => warning.message.includes("app")),
+  true
 )
 
 const brandWarnings = validateWarnings([

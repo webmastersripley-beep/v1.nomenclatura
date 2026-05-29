@@ -1,3 +1,8 @@
+import {
+  RULE_PROFILE_CYBERDAY,
+  getCyberdayExpectedFormatsForPiece,
+} from "./ruleProfiles.js"
+
 const BRAND_DESCRIPTOR_MODES = new Set([
   "brand",
   "brand-category",
@@ -117,6 +122,14 @@ function isGenericCategory(category) {
 }
 
 function getExpectedFormats(items) {
+  if (items.some((item) => item.ruleProfile === RULE_PROFILE_CYBERDAY)) {
+    const cyberFormats = getCyberdayExpectedFormats(items)
+
+    if (cyberFormats) return cyberFormats
+
+    return []
+  }
+
   const formats = new Set(
     items
       .map((item) => item.format)
@@ -129,6 +142,24 @@ function getExpectedFormats(items) {
   if (!hasDesktopOrMobile) return []
 
   return ["desk", "mb"]
+}
+
+function getCyberdayExpectedFormats(items) {
+  const pieces = [
+    ...new Set(
+      items
+        .map((item) => item.piece)
+        .filter(Boolean)
+    ),
+  ]
+
+  const expectedFormats = pieces
+    .map((piece) => getCyberdayExpectedFormatsForPiece(piece))
+    .filter((formats) => formats.length > 0)
+
+  if (expectedFormats.length === 0) return null
+
+  return [...new Set(expectedFormats.flat())]
 }
 
 function getFamilyLabel(items, fallback) {

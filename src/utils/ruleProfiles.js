@@ -12,6 +12,16 @@ export const RULE_PROFILE_LABELS = {
 }
 
 export const CYBERDAY_RULES_VERSION = "cyberday-excel-2026-05-28"
+export const CYBERDAY_EXPECTED_FORMATS_VERSION = "cyberday-formats-excel-2026-05-29"
+
+const CYBERDAY_EXPECTED_FORMATS_BY_PIECE = {
+  sl: ["desk", "mb"],
+  aux0a: ["desk", "mb"],
+  auxoa: ["desk", "mb"],
+  aux: ["desk", "mb"],
+  ol: ["app", "desk", "mb"],
+  bx8: ["desk", "mb"],
+}
 
 export const CYBERDAY_IMAGE_FAMILY_RULES = [
   {
@@ -229,4 +239,31 @@ export function getDefaultPieceForProfile(
   ruleProfile = RULE_PROFILE_GENERIC
 ) {
   return getRuleByFamilyForProfile(family, ruleProfile)?.defaultPiece || null
+}
+
+export function getCyberdayExpectedFormatsForPiece(piece = "") {
+  const cleanPiece = sanitizeValue(piece)
+
+  if (!cleanPiece) return []
+
+  if (CYBERDAY_EXPECTED_FORMATS_BY_PIECE[cleanPiece]) {
+    return CYBERDAY_EXPECTED_FORMATS_BY_PIECE[cleanPiece]
+  }
+
+  const indexedPiece = cleanPiece.match(/^([a-z]+)(\d{1,2})$/)
+
+  if (!indexedPiece) return []
+
+  const [, prefix, rawIndex] = indexedPiece
+  const index = Number(rawIndex)
+
+  if (prefix === "top" && index >= 1 && index <= 4) return ["desk"]
+  if (prefix === "sxh" && index >= 1 && index <= 2) return ["desk"]
+  if (prefix === "vnt" && index >= 1 && index <= 2) return ["desk"]
+  if (prefix === "uu" && index >= 1 && index <= 4) return ["desk"]
+  if (prefix === "bx" && index >= 1 && index <= 7) return ["desk"]
+  if (prefix === "marca" && index >= 1 && index <= 11) return ["desk", "mb"]
+  if (prefix === "marca" && index === 12) return ["desk"]
+
+  return []
 }

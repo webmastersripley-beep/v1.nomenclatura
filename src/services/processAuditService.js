@@ -39,7 +39,7 @@ export async function startProcessAudit(groupedData, { config = {} } = {}) {
     .select()
     .single()
 
-  if (error) throw new Error("Error creando auditoria en Supabase")
+  if (error) throwSupabaseError("Error creando auditoria en Supabase", error)
 
   await syncReviewAudit(data.id, groupedData, {
     status: "classified",
@@ -79,7 +79,7 @@ export async function syncReviewAudit(
     .update(processPatch)
     .eq("id", processId)
 
-  if (processError) throw new Error("Error actualizando auditoria")
+  if (processError) throwSupabaseError("Error actualizando auditoria", processError)
 
   await upsertFamilies(processId, families)
   await upsertItems(processId, families, manualFiles)
@@ -156,7 +156,7 @@ export async function completeProcessAudit(
     .select()
     .single()
 
-  if (error) throw new Error("Error cerrando auditoria del proceso")
+  if (error) throwSupabaseError("Error cerrando auditoria del proceso", error)
 
   return data
 }
@@ -204,7 +204,7 @@ async function upsertFamilies(processId, families) {
       onConflict: "process_id,family_id",
     })
 
-  if (error) throw new Error("Error guardando familias del proceso")
+  if (error) throwSupabaseError("Error guardando familias del proceso", error)
 }
 
 async function upsertItems(processId, families, manualFiles) {
@@ -232,7 +232,7 @@ async function upsertItems(processId, families, manualFiles) {
       onConflict: "process_id,original_name",
     })
 
-  if (error) throw new Error("Error guardando imagenes del proceso")
+  if (error) throwSupabaseError("Error guardando imagenes del proceso", error)
 }
 
 async function upsertFinalItems(processId, results, pathByOriginalName) {
@@ -278,7 +278,7 @@ async function upsertFinalItems(processId, results, pathByOriginalName) {
       onConflict: "process_id,original_name",
     })
 
-  if (error) throw new Error("Error guardando resultado final")
+  if (error) throwSupabaseError("Error guardando resultado final", error)
 }
 
 function buildItemRow(
@@ -371,7 +371,7 @@ async function createFallbackProcess(results, { batchName, downloadMode }) {
     .select("id")
     .single()
 
-  if (error) throw new Error("Error creando proceso")
+  if (error) throwSupabaseError("Error creando proceso", error)
 
   return data.id
 }
@@ -387,7 +387,7 @@ async function uploadProcessZip(processId, batchName, zipBlob) {
       upsert: true,
     })
 
-  if (error) throw new Error("Error subiendo ZIP del proceso")
+  if (error) throwSupabaseError("Error subiendo ZIP del proceso", error)
 
   return storagePath
 }
@@ -400,6 +400,18 @@ function sanitizeStorageSegment(value) {
     .replace(/[^a-z0-9._-]/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
+}
+
+function throwSupabaseError(context, error) {
+  console.error(context, error)
+
+  const detail =
+    error?.message ||
+    error?.error_description ||
+    error?.details ||
+    ""
+
+  throw new Error(detail ? `${context}: ${detail}` : context)
 }
 
 function isSupabaseConfigured() {
